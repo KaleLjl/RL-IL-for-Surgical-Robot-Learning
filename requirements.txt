@@ -1,0 +1,7 @@
+# Core dependencies for dVRK Gym environment
+stable-baselines3~=2.2.1
+imitation~=1.0.0
+numpy<2.0
+gymnasium
+pybullet
+torch~=1.13.1

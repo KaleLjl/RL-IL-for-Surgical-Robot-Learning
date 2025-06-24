@@ -1,0 +1,29 @@
+services:
+  dvrk-dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: dvrk_dev
+    volumes:
+      # Mount the entire project directory
+      - ..:/app
+      # Mount the X11 socket for GUI forwarding
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    environment:
+      # Forward the display
+      - DISPLAY=:1
+      # Grant access to the X server
+      - QT_X11_NO_MITSHM=1
+    # Use the host's network stack for seamless X11 forwarding
+    network_mode: "host"
+    # Keep the container running
+    stdin_open: true
+    tty: true
+    # GPU configuration
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
