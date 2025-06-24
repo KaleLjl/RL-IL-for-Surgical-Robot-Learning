@@ -13,7 +13,8 @@ This project is built upon a modern, standardized stack for robot learning resea
 | **Core Numerics** | NumPy | <2.0 | Pinned to avoid compatibility issues with older compiled libraries like `roboticstoolbox`. |
 | **Containerization** | Docker | - | For creating a reproducible development environment. |
 | **Base Image** | `nvidia/cudagl` | 11.4.2-base-ubuntu20.04 | Provides essential NVIDIA drivers and OpenGL for GUI applications inside Docker. |
-| **Virtual Desktop** | XFCE + `tightvncserver` | - | Enables GUI-based debugging and visualization of the simulation. |
+| **Packaging** | `setuptools`, `pip` | latest | Using a `pyproject.toml` file with a `src` layout for a modern, installable package structure. |
+| **GUI Forwarding** | X11 Forwarding | - | The container uses `network_mode: "host"` and shares the X11 socket to display GUI applications directly on the host. |
 
 ## 2. Deprecated Technologies
 The following technologies were part of the initial project setup but have been **explicitly abandoned** due to compatibility and maintenance issues.

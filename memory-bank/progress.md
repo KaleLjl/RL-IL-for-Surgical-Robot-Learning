@@ -18,9 +18,16 @@
 
 ## 3. Current Status (As of 2025-06-24)
 
--   **Phase**: **Setup & Foundation**.
--   **What Works**: A clear technical direction and development plan has been established and agreed upon.
--   **What's Left**: The entire custom environment (`dvrk_gym`) needs to be built.
+-   **Phase**: **Core Development Complete. Validation Starting.**
+-   **What Works**:
+    -   A modern, reproducible Docker development environment has been successfully built and verified.
+    -   The project follows a clean `src`-based layout with a `pyproject.toml` for packaging.
+    -   All core Python dependencies (PyTorch, SB3, imitation, PyBullet, roboticstoolbox-python) are installed and working.
+    -   GUI forwarding via X11 has been successfully configured and tested.
+    -   The `dvrk_gym` package has been successfully implemented, mirroring the structure of the original SurRoL robot and environment logic.
+    -   The first environment, `dvrk_gym/NeedleReach-v0`, is complete and has been verified with a test script (`scripts/test_env.py`). It can be instantiated, reset, and stepped through correctly.
+-   **What's Left**: The environment now needs to be validated by training a baseline learning agent.
 -   **Immediate Next Steps**:
-    1.  Clean up the project repository by removing or archiving the old SurRoL-related files.
-    2.  Implement the new `Dockerfile` to create a stable, VNC-enabled development environment based on the agreed-upon technology stack.
+    1.  Create a training script (`scripts/train_reach.py`) using Stable-Baselines3.
+    2.  Train a simple RL agent (e.g., PPO or SAC) on the `NeedleReach-v0` environment.
+    3.  Evaluate the trained agent's performance to validate that the environment provides a stable and solvable learning problem.
