@@ -17,9 +17,11 @@ Based on the success of the BC agent, we have established a standardized, three-
     -   **Goal**: Train a baseline policy via imitation learning.
     -   **Status**: A BC agent with a 94% success rate has been successfully trained and evaluated. This serves as our performance baseline.
 
-2.  **Stage 2: Demonstration-Augmented Policy Gradient (DAPG) - *Current Priority***
-    -   **Goal**: Enhance the BC policy's robustness and performance by fine-tuning it with RL. DAPG is chosen for its sample efficiency and ability to produce policies that are more robust to "covariate shift" than pure BC.
-    -   **Immediate Task**: Create a `scripts/train_dapg.py` script using the `imitation` library to train a DAPG agent. This will leverage our existing expert data and the "Flattening for Robustness" pattern.
+2.  **Stage 2: Demonstration-Augmented Policy Gradient (DAPG) - *Training in Progress***
+    -   **Goal**: Enhance the BC policy's robustness and performance by fine-tuning it with RL.
+    -   **Implementation**: We have built a custom DAPG-style algorithm, `PPOWithBCLoss`, which integrates a behavioral cloning loss into the standard PPO training loop from `stable-baselines3`.
+    -   **Status**: The training for the `NeedleReach-v0` task is currently running. The process is being monitored via TensorBoard, and the custom `bc_loss` is being successfully logged, validating our implementation.
+    -   **Immediate Task**: Monitor the training until completion, then create an evaluation script to assess the performance of the resulting model against the BC baseline.
 
 3.  **Stage 3: Residual Reinforcement Learning (RRL) - *Future Work***
     -   **Goal**: Further improve performance and safety by learning a small "residual" correction on top of a high-quality base policy.

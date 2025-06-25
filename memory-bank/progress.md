@@ -33,14 +33,17 @@
 -   **What Works**:
     -   A modern, reproducible Docker development environment.
     -   A fully configured and verified `dvrk_gym/NeedleReach-v0` environment, compliant with Gymnasium API standards.
-    -   A robust, working pipeline for training Behavioral Cloning (BC) agents.
-    -   Successful evaluation of the trained BC model, achieving a **94% success rate**. The results are documented in `doc/bc_evaluation_results.md`.
+    -   A robust, working pipeline for training Behavioral Cloning (BC) agents, achieving a 94% success rate.
     -   A clear pattern for handling library bugs with complex data types: preprocess them into the simplest possible format.
+    -   **A custom, in-house implementation of a DAPG-style algorithm (`PPOWithBCLoss`)**, which inherits from `stable-baselines3.PPO` and adds a behavioral cloning loss term.
+    -   A working training script (`scripts/train_dapg.py`) that successfully launches and monitors the custom DAPG training process using TensorBoard.
 -   **What's Left**:
-    -   Implementation of a Reinforcement Learning (RL) training pipeline.
-    -   Comparison between BC and RL approaches.
-    -   Hyperparameter tuning for both BC and RL models.
+    -   Full evaluation of the trained DAPG model.
+    -   Systematic comparison between the BC and DAPG policies.
+    -   Hyperparameter tuning for the DAPG algorithm (e.g., `bc_loss_weight`).
+    -   Implementation of the next stage of our standardized workflow: Residual Reinforcement Learning (RRL).
 -   **Immediate Next Steps**:
-    1.  **Implement RL Training**: Begin work on `train_rl.py` to train a PPO or SAC agent on the `NeedleReach-v0` task.
-    2.  **Compare BC vs. RL**: Once an RL agent is trained, compare its performance against the BC baseline.
-    3.  **Document Findings**: Continue to update the memory bank with results and learnings.
+    1.  **Monitor and Complete DAPG Training**: Allow the current DAPG training run to complete, monitoring its progress via TensorBoard.
+    2.  **Evaluate DAPG Policy**: Create an evaluation script for the newly trained DAPG model to measure its success rate and compare it to the 94% BC baseline.
+    3.  **Analyze and Tune**: Based on the evaluation results, analyze the policy's behavior and decide if hyperparameter tuning is necessary.
+    4.  **Document Findings**: Update the memory bank with the results of the DAPG experiment.
