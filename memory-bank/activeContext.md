@@ -1,7 +1,7 @@
 # Active Context
 
-## 1. Current Focus: ML Validation & Next Steps
-The primary focus is to build upon our recent success in training a Behavioral Cloning (BC) agent for the `NeedleReach-v0` environment. The previous blocker related to the `imitation` library has been **resolved**.
+## 1. Current Focus: Reinforcement Learning Implementation
+With the successful training and evaluation of the Behavioral Cloning (BC) agent (94% success rate), the project's focus now shifts to the next major milestone: **implementing a Reinforcement Learning (RL) pipeline.**
 
 ### The "imitation" Library Bug & The Solution
 After a lengthy and systematic debugging process, we conclusively proved that the `imitation` library (v1.0.1) has a fundamental bug in its handling of `gymnasium.spaces.Dict` observation spaces. The library's internal validation logic incorrectly calculates the length of dictionary-based observations, leading to persistent `ValueError` exceptions.
@@ -11,12 +11,11 @@ The final, robust solution was to **circumvent the bug by flattening the `Dict` 
 This entire debugging journey has been a critical learning experience and has been documented in `systemPatterns.md`.
 
 ## 2. Next Immediate Actions
-With the BC training pipeline now functional, the project can move forward with its core ML objectives.
+The successful BC evaluation provides a strong baseline. The project will now proceed with the following core ML objectives:
 
-1.  **Evaluate the Trained BC Agent**: The first step is to systematically evaluate the performance of the newly trained `bc_needle_reach.zip` model. This involves writing a dedicated evaluation script that loads the model, runs it in the `NeedleReach-v0` environment for multiple episodes, and records key performance metrics (e.g., success rate, distance to goal).
-2.  **Hyperparameter Tuning**: Based on the initial evaluation, we may need to tune the hyperparameters of the BC training process (e.g., learning rate, network architecture, number of epochs) to improve performance.
-3.  **Reinforcement Learning (RL)**: Begin development of the RL training pipeline using Stable-Baselines3. The `train_rl.py` script can now be implemented to train an agent (e.g., using PPO or SAC) on the `NeedleReach-v0` task.
-4.  **Compare BC vs. RL**: A key project goal is to compare the performance, sample efficiency, and robustness of agents trained with BC versus those trained with RL.
+1.  **Implement RL Training Pipeline**: This is the top priority. The `scripts/train_rl.py` file needs to be developed to train an agent from scratch using a suitable algorithm from Stable-Baselines3 (e.g., PPO or SAC) on the `NeedleReach-v0` environment.
+2.  **Compare RL vs. BC Performance**: Once a satisfactory RL agent is trained, its performance (success rate, sample efficiency, final reward) will be benchmarked against the 94% success rate achieved by the BC agent.
+3.  **Hyperparameter Tuning**: Depending on the initial RL results, we may need to perform hyperparameter tuning for either or both the RL and BC models to maximize performance.
 
 ## 3. Key Learnings & Decisions
 -   **Environment Replication is Deceptive**: Replicating a PyBullet environment requires a meticulous, multi-layered approach. The process revealed several non-obvious pitfalls that are now documented in `systemPatterns.md` under "PyBullet Environment Configuration Patterns". This documentation is critical for efficiently configuring future tasks.

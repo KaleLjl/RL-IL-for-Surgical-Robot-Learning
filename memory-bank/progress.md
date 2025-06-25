@@ -32,14 +32,15 @@
 -   **Phase**: **ML Validation & Iteration.**
 -   **What Works**:
     -   A modern, reproducible Docker development environment.
-    -   A fully configured and verified `dvrk_gym/NeedleReach-v0` environment.
-    -   A robust, working pipeline for training Behavioral Cloning (BC) agents using expert data, `imitation`, and `stable-baselines3`.
+    -   A fully configured and verified `dvrk_gym/NeedleReach-v0` environment, compliant with Gymnasium API standards.
+    -   A robust, working pipeline for training Behavioral Cloning (BC) agents.
+    -   Successful evaluation of the trained BC model, achieving a **94% success rate**. The results are documented in `doc/bc_evaluation_results.md`.
     -   A clear pattern for handling library bugs with complex data types: preprocess them into the simplest possible format.
 -   **What's Left**:
-    -   Systematic evaluation of the trained BC model's performance.
     -   Implementation of a Reinforcement Learning (RL) training pipeline.
     -   Comparison between BC and RL approaches.
+    -   Hyperparameter tuning for both BC and RL models.
 -   **Immediate Next Steps**:
-    1.  **Evaluate BC Agent**: Write and execute a script to evaluate the trained `bc_needle_reach.zip` model.
-    2.  **Implement RL Training**: Begin work on `train_rl.py` to train a PPO or SAC agent.
+    1.  **Implement RL Training**: Begin work on `train_rl.py` to train a PPO or SAC agent on the `NeedleReach-v0` task.
+    2.  **Compare BC vs. RL**: Once an RL agent is trained, compare its performance against the BC baseline.
     3.  **Document Findings**: Continue to update the memory bank with results and learnings.

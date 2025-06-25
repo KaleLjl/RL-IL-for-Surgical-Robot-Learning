@@ -99,7 +99,7 @@ class NeedleReachEnv(DVRKEnv):
         return {
             'observation': robot_state,
             'achieved_goal': np.array(eef_pos, dtype=np.float32),
-            'desired_goal': self.goal.copy(),
+            'desired_goal': self.goal.copy().astype(np.float32),
         }
 
     def _sample_goal(self) -> np.ndarray:
@@ -108,7 +108,7 @@ class NeedleReachEnv(DVRKEnv):
         # The goal is the position of the needle's center.
         # SurRoL adds a small z-offset.
         pos, _ = get_body_pose(self.needle_id)
-        goal = np.array([pos[0], pos[1], pos[2] + 0.005 * self.SCALING])
+        goal = np.array([pos[0], pos[1], pos[2] + 0.005 * self.SCALING], dtype=np.float32)
         return goal.copy()
 
     def _sample_goal_callback(self):
