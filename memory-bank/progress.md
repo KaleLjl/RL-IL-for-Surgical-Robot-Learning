@@ -16,18 +16,19 @@
 -   **Decision**: Based on the conclusive findings from the VNC experiment, a key strategic decision was made to **stop fixing SurRoL and instead build a new, custom dVRK environment from scratch**.
 -   **Rationale**: This approach, centered on PyTorch and Stable-Baselines3, provides full control over the technology stack, eliminates the root cause of the driver and EGL incompatibilities, and ensures long-term stability. It shifts the project's focus from reverse-engineering and patching to constructive, forward-looking development.
 
-## 3. Current Status (As of 2025-06-24)
+## 3. Current Status (As of 2025-06-25)
 
--   **Phase**: **Core Development Complete. Validation Starting.**
+-   **Phase**: **Environment Configuration Complete. Validation Starting.**
 -   **What Works**:
     -   A modern, reproducible Docker development environment has been successfully built and verified.
     -   The project follows a clean `src`-based layout with a `pyproject.toml` for packaging.
     -   All core Python dependencies (PyTorch, SB3, imitation, PyBullet, roboticstoolbox-python) are installed and working.
     -   GUI forwarding via X11 has been successfully configured and tested.
     -   The `dvrk_gym` package has been successfully implemented, mirroring the structure of the original SurRoL robot and environment logic.
-    -   The first environment, `dvrk_gym/NeedleReach-v0`, is complete and has been verified with a test script (`scripts/test_env.py`). It can be instantiated, reset, and stepped through correctly.
--   **What's Left**: The environment now needs to be validated by training a baseline learning agent.
+    -   The first environment, `dvrk_gym/NeedleReach-v0`, is now **fully configured and verified**. Through an iterative debugging process, it has been confirmed to be a 1:1 match of the original SurRoL environment in terms of initialization logic, physics, object/robot positioning, and visual appearance.
+    -   Key learnings from the complex debugging process have been documented in `systemPatterns.md` to accelerate future environment development.
+-   **What's Left**: The environment now needs to be validated by training a baseline learning agent to ensure it presents a solvable problem.
 -   **Immediate Next Steps**:
     1.  Create a training script (`scripts/train_reach.py`) using Stable-Baselines3.
-    2.  Train a simple RL agent (e.g., PPO or SAC) on the `NeedleReach-v0` environment.
-    3.  Evaluate the trained agent's performance to validate that the environment provides a stable and solvable learning problem.
+    2.  Train a simple RL agent (e.g., PPO or SAC) on the `dvrk_gym/NeedleReach-v0` environment.
+    3.  Evaluate the trained agent's performance to validate that the environment is stable and learnable.

@@ -56,16 +56,19 @@ class Arm(object):
         :param pos: basePosition.
         :param orn: baseOrientation in quaternion.
         """
+        self.scaling = scaling
+        # Scale the position before loading, to match original SurRoL behavior
+        pos = np.array(pos) * self.scaling
+        
         # should connect to the PyBullet server first
         self.body = p.loadURDF(urdf_file,
-                               np.array(pos) * scaling, orn,
-                               useFixedBase=True, globalScaling=scaling,
+                               pos, orn,
+                               useFixedBase=True, globalScaling=self.scaling,
                                flags=p.URDF_MAINTAIN_LINK_ORDER)  # self.collision=True is not suitable
         self.joints = get_joints(self.body)
         self._position_joint_desired = np.zeros(self.DoF)
         self.limits = limits
         self.tool_T_tip = tool_T_tip  # tool_T_tip offset
-        self.scaling = scaling  # scaling factor
 
         # update RCM pose and related transformations
         self.wTr, self.rTw = None, None
@@ -251,31 +254,36 @@ class Arm(object):
         set_joint_positions(self.body, self.joints, joint_positions)
         return self.move_joint(abs_input)
 
-    def inverse_kinematics(self, pose_world: tuple, link_index: None) -> np.ndarray:
+    def inverse_kinematics(self, pose_world: tuple, link_index: int = None) -> np.ndarray:
         """
         Compute the inverse kinematics using PyBullet built-in methods.
         Given the pose in the world frame, output the joint positions normalized by self.scaling.
         """
         if link_index is None:
-            link_index = self.DoF - 1
+            link_index = self.EEF_LINK_INDEX
+
+        # PyBullet's IK solver
         joints_inv = p.calculateInverseKinematics(
             bodyUniqueId=self.body,
             endEffectorLinkIndex=link_index,
-            targetPosition=pose_world[0],  # inertial pose, not joint pose
+            targetPosition=pose_world[0],
             targetOrientation=pose_world[1],
-            lowerLimits=self.limits['lower'][:self.DoF],
-            upperLimits=self.limits['upper'][:self.DoF],
-            jointRanges=self.limits['upper'][:self.DoF] - self.limits['lower'][:self.DoF],
-            restPoses=[0] * self.DoF,
-            residualThreshold=1e-9,  # can tune
-            maxNumIterations=200
+            lowerLimits=self.limits['lower'].tolist(),
+            upperLimits=self.limits['upper'].tolist(),
+            jointRanges=(self.limits['upper'] - self.limits['lower']).tolist(),
+            restPoses=self.get_current_joint_position(),  # Use current pose as rest pose for stability
+            residualThreshold=1e-5,
+            maxNumIterations=100
         )
-        # joints_inv = inverse_kinematics(self.body, link_index, pose_world[0], pose_world[1])
-        joints_inv = np.array(joints_inv)
+        
+        joints_inv = np.array(joints_inv)[:self.DoF]
+        
+        # Un-scale prismatic joints
         for i in range(self.DoF):
             if self.JOINT_TYPES[i] == 'P':
                 joints_inv[i] /= self.scaling
-        return wrap_angle(joints_inv[:self.DoF])
+                
+        return wrap_angle(joints_inv)
 
     def get_jacobian_spatial(self, qs=None) -> np.ndarray:
         """

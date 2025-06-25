@@ -49,8 +49,10 @@ def main():
             print("Episode finished. Resetting.")
             obs, info = env.reset()
 
+    print("\nTest finished. Press Enter in the terminal to close the window.")
+    input()  # This will pause the script until you press Enter
     env.close()
-    print("\nTest finished successfully.")
+
 
 if __name__ == "__main__":
     main()

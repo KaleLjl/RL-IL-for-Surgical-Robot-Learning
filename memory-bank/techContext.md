@@ -5,7 +5,7 @@ This project is built upon a modern, standardized stack for robot learning resea
 
 | Category | Technology | Version/Spec | Rationale |
 | :--- | :--- | :--- | :--- |
-| **Simulator** | PyBullet | latest | Lightweight, fast, and directly supports the required URDF format. |
+| **Simulator** | PyBullet | latest | Lightweight, fast, and directly supports the required URDF format. <br><br> **Configuration Notes:** <br> - `__init__` must define spaces. <br> - Camera must be reset after `p.resetSimulation`. <br> - Beware of position vs. `globalScaling` interactions. <br> - See `systemPatterns.md` for full details. |
 | **Environment API** | Gymnasium | latest | The official standard for RL environments, ensuring broad compatibility. |
 | **RL Algorithms** | Stable-Baselines3 | ~2.2.1 | A robust, well-maintained library for PyTorch-based RL algorithms. |
 | **Imitation Learning** | imitation | ~1.0.0 | Designed to work seamlessly with Stable-Baselines3 for IL tasks. |
