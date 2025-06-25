@@ -101,3 +101,25 @@ graph TD
     -   **`_get_obs()`**: Define the precise contents of the observation dictionary for the task.
 
 This architecture makes adding new tasks straightforward, as developers can focus solely on the task-specific logic without worrying about the underlying environment setup.
+
+## 5. Data Handling Pattern: Flattening for Robustness
+
+A critical pattern emerged during the debugging of the `imitation` library's issues with `Dict` observation spaces.
+
+-   **Problem**: Third-party libraries, even popular ones, may have incomplete or buggy support for complex data structures like `gymnasium.spaces.Dict`. This can lead to cryptic errors that are difficult to debug. In our case, the `imitation` library's internal validation logic consistently failed to correctly interpret the length of our `Dict` observation data.
+
+-   **Solution**: The most robust and pragmatic solution is to **preprocess the data into the simplest possible format before passing it to the library**. For `Dict` spaces, this means flattening the dictionary observation into a single, flat `Box` (NumPy array) space.
+
+    ```python
+    # Example from train_bc.py
+    # Flatten each observation dictionary into a single numpy array
+    for i in range(num_transitions):
+        flat_obs = np.concatenate([
+            obs_soa['observation'][i],
+            obs_soa['achieved_goal'][i],
+            obs_soa['desired_goal'][i]
+        ])
+        all_obs.append(flat_obs)
+    ```
+
+-   **Pattern**: When encountering persistent, unexplainable errors within a library's data handling pipeline, always consider "dumbing down" your data format. By converting complex structures to simple, flat arrays, you can circumvent potential bugs in the library's internal processing and regain control over the data pipeline. This is a powerful fallback strategy for ensuring compatibility and robustness.

@@ -29,15 +29,57 @@ def train_bc_agent(env_name, expert_data_path, model_save_path, log_dir):
     with open(expert_data_path, "rb") as f:
         trajectories = pickle.load(f)
 
-    # Convert the list of dictionaries to a list of Trajectory objects
-    trajectories = [
-        types.Trajectory(obs=traj["obs"], acts=traj["acts"], infos=None, terminal=True)
-        for traj in trajectories
-    ]
+    # FINAL, VERIFIED SOLUTION:
+    # The `imitation` library has issues with Dict observation spaces.
+    # The most robust solution is to flatten the observations at the data-loading
+    # stage, before they are ever passed to the library. This avoids all bugs.
+    print("Flattening Dict observations into a single array...")
+    
+    all_obs = []
+    all_next_obs = []
+    all_acts = []
+    all_dones = []
 
-    # Use the recommended utility to flatten trajectories into transitions
-    transitions = rollout.flatten_trajectories(trajectories)
-    print(f"Loaded and processed {len(transitions)} transitions.")
+    for traj in trajectories:
+        obs_soa = traj["obs"]
+        num_transitions = len(traj["acts"])
+
+        # Flatten each observation dictionary into a single numpy array
+        for i in range(num_transitions):
+            flat_obs = np.concatenate([
+                obs_soa['observation'][i],
+                obs_soa['achieved_goal'][i],
+                obs_soa['desired_goal'][i]
+            ])
+            all_obs.append(flat_obs)
+            
+            flat_next_obs = np.concatenate([
+                obs_soa['observation'][i+1],
+                obs_soa['achieved_goal'][i+1],
+                obs_soa['desired_goal'][i+1]
+            ])
+            all_next_obs.append(flat_next_obs)
+
+        all_acts.extend(traj["acts"])
+        dones = [False] * (num_transitions - 1) + [True]
+        all_dones.extend(dones)
+
+
+    # Convert lists to a single large numpy array
+    all_obs = np.array(all_obs)
+    all_next_obs = np.array(all_next_obs)
+    all_acts = np.array(all_acts)
+    all_dones = np.array(all_dones)
+
+    # The imitation library expects data in a specific format (Transitions).
+    transitions = types.Transitions(
+        obs=all_obs,
+        acts=all_acts,
+        next_obs=all_next_obs,
+        dones=all_dones,
+        infos=np.array([{} for _ in range(len(all_obs))]),
+    )
+    print(f"Data flattened and converted to Transitions format: {len(transitions)} samples.")
 
     # --- 2. Setup Environment ---
     print(f"Initializing environment: {env_name}")
@@ -45,21 +87,31 @@ def train_bc_agent(env_name, expert_data_path, model_save_path, log_dir):
 
     # --- 3. Configure Logging ---
     os.makedirs(log_dir, exist_ok=True)
-    imitation_format_strings = ["stdout", "tensorboard"]
-    imitation_logger.configure(folder=log_dir, format_strings=imitation_format_strings)
-    sb3_logger.configure(folder=log_dir, format_strings=imitation_format_strings)
+    # The imitation logger API seems to have changed and is simpler now.
+    imitation_logger.configure(folder=log_dir)
+    # The SB3 logger still accepts format_strings.
+    sb3_logger.configure(folder=log_dir, format_strings=["stdout", "tensorboard"])
     print(f"Logging configured at: {log_dir}")
 
     # --- 4. Setup BC Trainer ---
-    # For dictionary observation spaces, we must use the MultiInputActorCriticPolicy.
-    policy = MultiInputActorCriticPolicy(
-        observation_space=venv.observation_space,
+    # Since we flattened the observations, we must manually create a Box observation
+    # space that matches our flattened data, and use that to initialize the policy.
+    from gymnasium.spaces import Box
+    from stable_baselines3.common.policies import ActorCriticPolicy as MlpPolicy
+
+    flat_obs_space = Box(
+        low=-np.inf, high=np.inf, shape=all_obs.shape[1:], dtype=np.float32
+    )
+
+    policy = MlpPolicy(
+        observation_space=flat_obs_space,
         action_space=venv.action_space,
-        lr_schedule=lambda _: torch.finfo(torch.float32).max, # Effectively a constant learning rate
+        lr_schedule=lambda _: 0.001,
+        net_arch=[256, 256],
     )
 
     bc_trainer = bc.BC(
-        observation_space=venv.observation_space,
+        observation_space=flat_obs_space,
         action_space=venv.action_space,
         demonstrations=transitions,
         policy=policy,

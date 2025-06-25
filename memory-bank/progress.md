@@ -16,19 +16,30 @@
 -   **Decision**: Based on the conclusive findings from the VNC experiment, a key strategic decision was made to **stop fixing SurRoL and instead build a new, custom dVRK environment from scratch**.
 -   **Rationale**: This approach, centered on PyTorch and Stable-Baselines3, provides full control over the technology stack, eliminates the root cause of the driver and EGL incompatibilities, and ensures long-term stability. It shifts the project's focus from reverse-engineering and patching to constructive, forward-looking development.
 
-## 3. Current Status (As of 2025-06-25)
+## 3. ML Validation Phase: Overcoming the `imitation` Bug
 
--   **Phase**: **ML Validation Blocked by Paradoxical Library Error.**
+-   **Initial Blocker**: The project was significantly delayed by a fundamental bug in the `imitation` library's handling of `Dict` observation spaces. The library's internal validation logic consistently failed, misinterpreting the structure of our correctly formatted expert data.
+-   **Debugging & Diagnosis**:
+    -   A systematic process of elimination was followed, including creating a minimal, reproducible example (`diagnose_imitation_bug.py`).
+    -   This process definitively proved the issue was not in our code but within the `imitation` library itself. We confirmed we were using the latest version (`1.0.1`), which had not fixed the bug.
+-   **Resolution**: After exploring multiple complex workarounds, the most robust and pragmatic solution was chosen: **flatten the `Dict` observation data into a simple `Box` (array) format at the data-loading stage**.
+    -   The `train_bc.py` script was refactored to perform this flattening before passing the data to the `imitation` trainer.
+    -   This approach successfully circumvented the library's buggy validation logic.
+-   **Outcome**: **The ML validation blocker is now resolved.** We have successfully trained a Behavioral Cloning agent on the `NeedleReach-v0` task and saved the resulting model.
+
+## 4. Current Status (As of 2025-06-25)
+
+-   **Phase**: **ML Validation & Iteration.**
 -   **What Works**:
-    -   A modern, reproducible Docker development environment has been successfully built and verified.
-    -   The project follows a clean `src`-based layout with a `pyproject.toml` for packaging.
-    -   All core Python dependencies (PyTorch, SB3, imitation, PyBullet, roboticstoolbox-python) are installed and working.
-    -   GUI forwarding via X11 has been successfully configured and tested.
-    -   The `dvrk_gym` package has been successfully implemented, mirroring the structure of the original SurRoL robot and environment logic.
-    -   The first environment, `dvrk_gym/NeedleReach-v0`, is now **fully configured and verified**. Through an iterative debugging process, it has been confirmed to be a 1:1 match of the original SurRoL environment in terms of initialization logic, physics, object/robot positioning, and visual appearance.
-    -   Key learnings from the complex debugging process have been documented in `systemPatterns.md` to accelerate future environment development.
--   **What's Left**: The ML validation phase is blocked. While the custom environment and expert data have been verified as correct, the `imitation` library consistently fails with a `ValueError`, indicating a data mismatch that does not exist in the source data. This points to a deep, underlying bug or incompatibility.
+    -   A modern, reproducible Docker development environment.
+    -   A fully configured and verified `dvrk_gym/NeedleReach-v0` environment.
+    -   A robust, working pipeline for training Behavioral Cloning (BC) agents using expert data, `imitation`, and `stable-baselines3`.
+    -   A clear pattern for handling library bugs with complex data types: preprocess them into the simplest possible format.
+-   **What's Left**:
+    -   Systematic evaluation of the trained BC model's performance.
+    -   Implementation of a Reinforcement Learning (RL) training pipeline.
+    -   Comparison between BC and RL approaches.
 -   **Immediate Next Steps**:
-    1.  **Diagnose Root Cause**: The primary goal is now to understand why the `imitation` library is misinterpreting the verified-as-correct expert data.
-    2.  **Isolate the Problem**: Create a minimal reproducible example to see if the error can be triggered outside of the main project, which could confirm a library bug.
-    3.  **Re-evaluate Dependencies**: Consider that the issue may stem from an unfortunate interaction between the specific library versions of `imitation`, `stable-baselines3`, and `gymnasium`.
+    1.  **Evaluate BC Agent**: Write and execute a script to evaluate the trained `bc_needle_reach.zip` model.
+    2.  **Implement RL Training**: Begin work on `train_rl.py` to train a PPO or SAC agent.
+    3.  **Document Findings**: Continue to update the memory bank with results and learnings.
