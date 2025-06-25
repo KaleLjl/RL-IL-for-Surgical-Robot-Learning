@@ -56,3 +56,48 @@ Replicating a PyBullet environment from a reference implementation requires meti
 -   **Visual and Physical Fidelity**: Achieving a 1:1 match requires checking subtle details beyond core logic.
     -   **Visuals**: Calls to `p.changeVisualShape` to modify parameters like `specularColor` are crucial for matching the look and feel.
     -   **Physics**: URDF properties like `useFixedBase` for objects must be identical to ensure the same physical interactions.
+
+## 4. Environment Architecture: Base Class + Task Subclass
+To support multiple surgical tasks efficiently, the project uses an object-oriented inheritance pattern. This separates the shared, complex boilerplate from the simple, task-specific logic.
+
+```mermaid
+graph TD
+    subgraph "Shared Foundation (dvrk_gym)"
+        A[DVRKEnv]
+        A -- "Provides" --> B(Table, Standard Camera)
+        A -- "Provides" --> C(Gymnasium API Interface)
+        A -- "Provides" --> D(PSM Robot Model via Psm Class)
+    end
+
+    subgraph "Specific Task (e.g., needle_reach.py)"
+        F[NeedleReachEnv] -- "Inherits from" --> A
+        F -- "Implements" --> G(Load Needle & Tray)
+        F -- "Implements" --> H(Define 'Reach' Goal)
+        F -- "Implements" --> I(Define Reward Logic)
+    end
+
+    subgraph "Future Task (e.g., peg_transfer.py)"
+        J[PegTransferEnv] -- "Inherits from" --> A
+        J -- "Implements" --> K(Load Peg Board & Block)
+        J -- "Implements" --> L(Define 'Transfer' Goal)
+        J -- "Implements" --> M(Define New Reward Logic)
+    end
+
+    style A fill:#d4f0db,stroke:#333,stroke-width:2px
+```
+
+### Responsibilities
+
+-   **`DVRKEnv` (Base Class)**: Handles the complex, shared logic that is common to all dVRK tasks. This includes:
+    -   Setting up the PyBullet simulation.
+    -   Loading the surgical table.
+    -   Providing a standard camera view.
+    -   Managing the core `__init__` and `reset` loop, ensuring compliance with Gymnasium standards.
+
+-   **`*Task*Env` (Subclass)**: Each new surgical gesture is implemented as a new subclass of `DVRKEnv`. Its only responsibilities are to define the unique elements of the task:
+    -   **`_env_setup()`**: Load the specific objects for the task (e.g., needle, gauze, peg board).
+    -   **`_get_reward()`**: Implement the logic for calculating rewards.
+    -   **`_is_success()`**: Implement the logic for determining if the task is complete.
+    -   **`_get_obs()`**: Define the precise contents of the observation dictionary for the task.
+
+This architecture makes adding new tasks straightforward, as developers can focus solely on the task-specific logic without worrying about the underlying environment setup.
