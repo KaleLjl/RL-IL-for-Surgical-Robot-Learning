@@ -81,16 +81,6 @@ class Arm(object):
         self._set_collision()
         # self._add_constraint()  # have effect when the joint positions are not set
 
-        # use roboticstoolbox to calculate the forward and inverse kinematics quickly
-        links = []
-        for i in range(self.DoF):
-            # DH parameters
-            if self.JOINT_TYPES[i] == 'R':
-                links.append(rtb.RevoluteMDH(alpha=self.ALPHA[i], a=self.A[i], d=self.D[i], offset=self.THETA[i]))
-            else:
-                links.append(rtb.PrismaticMDH(alpha=self.ALPHA[i], a=self.A[i], theta=self.THETA[i], offset=self.D[i]))
-        self.robot = rtb.DHRobot(links, name=self.NAME)
-
     def get_current_position(self) -> np.ndarray:
         """ Get the 'current cartesian position' of the arm (RCM frame).
         Return 4*4 matrix. """
@@ -146,8 +136,12 @@ class Arm(object):
         :param abs_input: the absolute translation you want to make (in joint space).
         :return: whether or not able to reach the given input.
         """
-        if not self._check_joint_limits(abs_input):
-            return False
+        abs_input, success = self._check_joint_limits(abs_input)
+        if not success:
+            # Even if clipped, we proceed with the valid (clipped) values
+            # but the method can still indicate that the original target was not met.
+            pass
+
         self._position_joint_desired = np.copy(abs_input)
         joint_positions = self._get_joint_positions_all(abs_input)
         p.setJointMotorControlArray(self.body,
@@ -155,7 +149,7 @@ class Arm(object):
                                     p.POSITION_CONTROL,
                                     targetPositions=joint_positions,
                                     targetVelocities=[0.] * len(joint_positions))
-        return abs_input
+        return success, abs_input
 
     def move(self, abs_input: np.ndarray, link_index=None) -> [bool, np.ndarray]:
         """
@@ -248,42 +242,18 @@ class Arm(object):
         Helper function for PyBullet initial reset.
         Not recommend to use during simulation.
         """
-        if not self._check_joint_limits(abs_input):
-            return
+        abs_input, success = self._check_joint_limits(abs_input)
+        # For reset, we always proceed with the (potentially clipped) values.
         joint_positions = self._get_joint_positions_all(abs_input)
         set_joint_positions(self.body, self.joints, joint_positions)
         return self.move_joint(abs_input)
 
     def inverse_kinematics(self, pose_world: tuple, link_index: int = None) -> np.ndarray:
         """
-        Compute the inverse kinematics using PyBullet built-in methods.
-        Given the pose in the world frame, output the joint positions normalized by self.scaling.
+        Compute the inverse kinematics.
+        This method should be implemented by the specific robot arm subclass.
         """
-        if link_index is None:
-            link_index = self.EEF_LINK_INDEX
-
-        # PyBullet's IK solver
-        joints_inv = p.calculateInverseKinematics(
-            bodyUniqueId=self.body,
-            endEffectorLinkIndex=link_index,
-            targetPosition=pose_world[0],
-            targetOrientation=pose_world[1],
-            lowerLimits=self.limits['lower'].tolist(),
-            upperLimits=self.limits['upper'].tolist(),
-            jointRanges=(self.limits['upper'] - self.limits['lower']).tolist(),
-            restPoses=self.get_current_joint_position(),  # Use current pose as rest pose for stability
-            residualThreshold=1e-5,
-            maxNumIterations=100
-        )
-        
-        joints_inv = np.array(joints_inv)[:self.DoF]
-        
-        # Un-scale prismatic joints
-        for i in range(self.DoF):
-            if self.JOINT_TYPES[i] == 'P':
-                joints_inv[i] /= self.scaling
-                
-        return wrap_angle(joints_inv)
+        raise NotImplementedError
 
     def get_jacobian_spatial(self, qs=None) -> np.ndarray:
         """
@@ -296,15 +266,26 @@ class Arm(object):
         return self.robot.jacob0(qs)
 
     def _check_joint_limits(self, abs_input: [list, np.ndarray]):
-        """ Check if the joint set is within the joint limits.
+        """ 
+        Check if the joint set is within the joint limits and clip if necessary.
         """
         assert len(abs_input) == self.DoF, "The number of joints should match the arm DoF."
-        if not np.all(np.bitwise_and(abs_input >= self.limits['lower'][:self.DoF],
-                                     abs_input <= self.limits['upper'][:self.DoF])):
-            print("Joint position out of valid range!")
-            print("Set joint:", abs_input)
-            return False
-        return True
+        
+        lower_limits = self.limits['lower'][:self.DoF]
+        upper_limits = self.limits['upper'][:self.DoF]
+        
+        # Check if any joint is out of bounds
+        if not np.all(np.bitwise_and(abs_input >= lower_limits, abs_input <= upper_limits)):
+            print("Joint position out of valid range! Clipping the values.")
+            print("Original joint values:", abs_input)
+            
+            # Clip the values to be within the limits
+            clipped_input = np.clip(abs_input, lower_limits, upper_limits)
+            
+            print("Clipped joint values:", clipped_input)
+            return clipped_input, False  # Return clipped values and indicate failure
+            
+        return abs_input, True # Return original values and indicate success
 
     def _get_joint_positions_all(self, abs_input: [list, np.ndarray]):
         """ With the consideration of parallel mechanism constraints and other redundant joints.

@@ -1,16 +1,16 @@
 # Active Context
 
 ## 1. Current Focus
-The `dvrk_gym/NeedleReach-v0` environment has now been successfully configured and debugged to be a 1:1 match of the original SurRoL implementation. The immediate focus is now to **validate this environment by training a baseline agent**. This will confirm that the environment is not only visually and physically correct, but also provides a solvable learning problem.
+**Root Cause Identified.** The robotic arm's failure to move is caused by a faulty Inverse Kinematics (IK) implementation. The new `dvrk_gym` code replaced PyBullet's native IK solver with one from the `roboticstoolbox` library, which fails to find a valid solution and causes the robot to be commanded to its current position (i.e., zero movement).
 
 ## 2. Next Immediate Actions
-The validation plan remains the same, but is now unblocked:
+The plan is to revert to the original, functional IK implementation from the SurRoL project.
 
-1.  **Create Training Script**: Implement `scripts/train_reach.py` to train a Stable-Baselines3 agent.
-2.  **Train Agent**: Use an appropriate algorithm (e.g., PPO or SAC) to train an agent on the `dvrk_gym/NeedleReach-v0` environment.
-3.  **Evaluate Performance**: Monitor the training progress (e.g., success rate, episode reward) to ensure the agent is learning.
-4.  **Save Model**: Save the trained model for later use and as a benchmark.
-5.  **Document Results**: Update the memory bank with the training results and next steps.
+1.  **Restore PyBullet IK**: Modify `src/dvrk_gym/robots/arm.py` to re-implement the `inverse_kinematics` method using PyBullet's native `p.calculateInverseKinematics`, matching the original SurRoL code.
+2.  **Remove Faulty IK**: Delete the overriding `inverse_kinematics` method from `src/dvrk_gym/robots/psm.py` to allow it to inherit the correct implementation from the `Arm` base class.
+3.  **Verify Fix**: Instruct the user to re-run the `scripts/test_direct_control.py` script to confirm that the robot now moves as expected.
+4.  **Full Validation**: Once the direct control test passes, run the original `scripts/generate_expert_data.py` script to ensure the initial problem is fully resolved.
+5.  **Document Final Outcome**: Update the memory bank with the results of the fix.
 
 ## 3. Key Learnings & Decisions
 -   **Environment Replication is Deceptive**: Replicating a PyBullet environment requires a meticulous, multi-layered approach. The process revealed several non-obvious pitfalls that are now documented in `systemPatterns.md` under "PyBullet Environment Configuration Patterns". This documentation is critical for efficiently configuring future tasks.

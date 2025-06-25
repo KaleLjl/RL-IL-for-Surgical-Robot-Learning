@@ -27,8 +27,8 @@
     -   The `dvrk_gym` package has been successfully implemented, mirroring the structure of the original SurRoL robot and environment logic.
     -   The first environment, `dvrk_gym/NeedleReach-v0`, is now **fully configured and verified**. Through an iterative debugging process, it has been confirmed to be a 1:1 match of the original SurRoL environment in terms of initialization logic, physics, object/robot positioning, and visual appearance.
     -   Key learnings from the complex debugging process have been documented in `systemPatterns.md` to accelerate future environment development.
--   **What's Left**: The environment now needs to be validated by training a baseline learning agent to ensure it presents a solvable problem.
+-   **What's Left**: The root cause of the robot control failure has been identified and is being fixed. The issue was a faulty Inverse Kinematics implementation that has been pinpointed through systematic comparison with the original SurRoL codebase.
 -   **Immediate Next Steps**:
-    1.  Create a training script (`scripts/train_reach.py`) using Stable-Baselines3.
-    2.  Train a simple RL agent (e.g., PPO or SAC) on the `dvrk_gym/NeedleReach-v0` environment.
-    3.  Evaluate the trained agent's performance to validate that the environment is stable and learnable.
+    1.  **Apply IK Fix**: Restore the original, PyBullet-based Inverse Kinematics solver in the `Arm` base class and remove the faulty implementation from the `Psm` subclass.
+    2.  **Confirm Fix**: Re-run the direct control test script to verify that the robot arm is now controllable.
+    3.  **Resume Validation**: Once the fix is confirmed, proceed with the original plan of training a baseline learning agent to validate the environment.

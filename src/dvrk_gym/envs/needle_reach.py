@@ -29,10 +29,13 @@ class NeedleReachEnv(DVRKEnv):
     SCALING = 5.
     
     # Constants from the parent PsmEnv in SurRoL
-    POSE_PSM1 = ((0.05, 0.24, 0.8524), (0, 0, -(90 + 20) / 180 * np.pi))
+    POSE_PSM1 = ((0.05, 0.24, 0.8024), (0, 0, -(90 + 20) / 180 * np.pi))
     DISTANCE_THRESHOLD = 0.005
 
     def __init__(self, render_mode: str = None):
+        # Store render_mode
+        self.render_mode = render_mode
+        
         # Correctly initialize workspace limits with offset before scaling
         workspace_limits = np.asarray(self.WORKSPACE_LIMITS) \
                            + np.array([0., 0., 0.0102]).reshape((3, 1))
@@ -40,7 +43,7 @@ class NeedleReachEnv(DVRKEnv):
         
         self.distance_threshold = self.DISTANCE_THRESHOLD * self.SCALING
         
-        super().__init__(render_mode=render_mode)
+        super().__init__(render_mode=self.render_mode)
         
         self.success_threshold = self.distance_threshold
 
@@ -54,11 +57,9 @@ class NeedleReachEnv(DVRKEnv):
         psm_orn_quat = p.getQuaternionFromEuler(psm_orn_eul)
         self.psm1 = Psm(pos=psm_pos, orn=psm_orn_quat, scaling=self.SCALING)
         
-        # Reset robot to a start pose within the workspace, using original orientation
-        pos = (self.workspace_limits[0][0], self.workspace_limits[1][1], self.workspace_limits[2][1])
-        orn = (0.5, 0.5, -0.5, -0.5) # Use original orientation
-        joint_positions = self.psm1.inverse_kinematics((pos, orn), self.psm1.EEF_LINK_INDEX)
-        self.psm1.reset_joint(joint_positions)
+        # The robot is initialized to its default pose in the Psm constructor.
+        # No explicit reset is needed here, aligning with a more stable setup.
+        self.block_gripper = True
 
         # Load tray pad
         tray_path = os.path.join(ASSET_DIR_PATH, 'tray/tray_pad.urdf')
@@ -94,31 +95,80 @@ class NeedleReachEnv(DVRKEnv):
     def _get_obs(self) -> dict:
         robot_state = self._get_obs_robot_state()
         eef_pos, _ = get_link_pose(self.psm1.body, self.psm1.EEF_LINK_INDEX)
-        needle_pos, _ = get_body_pose(self.needle_id)
-
+        
         return {
             'observation': robot_state,
             'achieved_goal': np.array(eef_pos, dtype=np.float32),
-            'desired_goal': np.array(needle_pos, dtype=np.float32),
+            'desired_goal': self.goal.copy(),
         }
 
+    def _sample_goal(self) -> np.ndarray:
+        """ Samples a new goal and returns it, aligned with SurRoL.
+        """
+        # The goal is the position of the needle's center.
+        # SurRoL adds a small z-offset.
+        pos, _ = get_body_pose(self.needle_id)
+        goal = np.array([pos[0], pos[1], pos[2] + 0.005 * self.SCALING])
+        return goal.copy()
+
+    def _sample_goal_callback(self):
+        """ Moves the goal visualization sphere to the new goal position.
+        """
+        p.resetBasePositionAndOrientation(self.goal_vis_id, self.goal, (0, 0, 0, 1))
+
+    def get_oracle_action(self, obs: dict) -> np.ndarray:
+        """
+        Define a human expert strategy (P-controller).
+        Aligned with the original SurRoL implementation.
+        """
+        # The P-controller logic from SurRoL is simplified here.
+        # The original implementation had a division by 0.01, which is likely
+        # a remnant of a different scaling system. We directly use the delta.
+        delta_pos = obs['desired_goal'] - obs['achieved_goal']
+
+        # Stop if close enough - adjusted threshold for direct distance
+        # A large multiplier is used to generate a strong signal towards the goal.
+        # This is then clipped to a max of 1.0 to ensure controlled movement.
+        delta_pos *= 10  # Amplification factor
+        
+        # Clip the action to be within the standard [-1, 1] range
+        delta_pos = np.clip(delta_pos, -1.0, 1.0)
+
+        # Construct the final action array (dx, dy, dz, d_roll, d_pitch, d_yaw)
+        # Set rotational components to zero as this is a reaching task.
+        action = np.array([delta_pos[0], delta_pos[1], delta_pos[2], 0., 0., 0.])
+        return action
+
     def _set_action(self, action: np.ndarray):
-        # Aligned with SurRoL's PsmEnv _set_action
+        """
+        Applies the given action to the simulation.
+        The action is a delta pose in the world frame.
+        This method is aligned with the logic in SurRoL's psm_env.py.
+        """
         action = action.copy()
-        delta_pos = action[:3] * 0.01 * self.SCALING # Scale down the movement
+        delta_pos = action[:3] * 0.01 * self.SCALING  # Scale down the movement
+
+        # Get current end-effector pose in the world frame
+        current_eef_pos, current_eef_orn = get_link_pose(self.psm1.body, self.psm1.EEF_LINK_INDEX)
         
-        current_pose_matrix = self.psm1.get_current_position()
-        current_pose_matrix[:3, 3] += delta_pos
+        # Calculate the new target position in the world frame
+        new_pos = current_eef_pos + delta_pos
         
-        # Clip to workspace
-        current_pose_matrix[:3, 3] = np.clip(
-            current_pose_matrix[:3, 3],
+        # Clip the new position to the workspace limits
+        new_pos = np.clip(
+            new_pos,
             self.workspace_limits[:, 0],
             self.workspace_limits[:, 1]
         )
         
-        # For this task, we ignore orientation changes for simplicity
-        self.psm1.move(current_pose_matrix)
+        # The orientation is kept constant for this reaching task
+        target_orn = current_eef_orn
+        
+        # Convert the world-frame target pose to the RCM frame for the robot controller
+        target_pose_rcm = self.psm1.pose_world2rcm((new_pos, target_orn), option='matrix')
+
+        # Move the robot
+        self.psm1.move(target_pose_rcm)
 
     def _is_success(self, obs: dict) -> bool:
         dist = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])

@@ -14,10 +14,11 @@ https://github.com/jhu-dvrk/sawIntuitiveResearchKit/blob/master/share/kinematic/
 import os
 import numpy as np
 import pybullet as p
+import roboticstoolbox as rtb
 
 from .arm import Arm
-from ..utils.pybullet_utils import get_joint_positions
-
+from ..utils.pybullet_utils import get_joint_positions, wrap_angle
+from ..utils.robotics import get_matrix_from_pose_2d
 # Define the asset path relative to this file
 ASSET_DIR_PATH = os.path.join(os.path.dirname(__file__), '..', 'assets')
 
@@ -68,7 +69,49 @@ class Psm(Arm):
         super(Psm, self).__init__(self.URDF_PATH, pos, orn,
                                   TOOL_JOINT_LIMIT, tool_T_tip, scaling)
 
+        # use roboticstoolbox to calculate the forward and inverse kinematics quickly
+        links = []
+        for i in range(self.DoF):
+            # DH parameters
+            if self.JOINT_TYPES[i] == 'R':
+                links.append(rtb.RevoluteMDH(alpha=self.ALPHA[i], a=self.A[i], d=self.D[i], offset=self.THETA[i]))
+            else:
+                links.append(rtb.PrismaticMDH(alpha=self.ALPHA[i], a=self.A[i], theta=self.THETA[i], offset=self.D[i]))
+        self.robot = rtb.DHRobot(links, name=self.NAME)
+
         self._jaw_angle = self.get_current_jaw_position() / 2
+
+    def inverse_kinematics(self, pose_world: tuple, link_index: int = None) -> np.ndarray:
+        """
+        Compute the inverse kinematics using roboticstoolbox.
+        Given the pose in the world frame, output the joint positions normalized by self.scaling.
+        """
+        if link_index is None:
+            link_index = self.EEF_LINK_INDEX
+
+        # Convert world pose to a 4x4 matrix
+        T_world = get_matrix_from_pose_2d(pose_world)
+        
+        # Use roboticstoolbox's Levenberg-Marquardt IK solver.
+        # The return format can vary between versions, so we handle it robustly by index.
+        # We assume the returned tuple is (q, success, ...).
+        sol = self.robot.ik_LM(T_world, q0=self.get_current_joint_position())
+        
+        # Check for success flag at the second position of the tuple
+        if not sol[1]:
+            print("IK solution not found!")
+            # Fallback to current joint positions if IK fails
+            return np.array(self.get_current_joint_position())
+
+        # Get joint positions from the first position of the tuple
+        joints_inv = sol[0]
+        
+        # Un-scale prismatic joints
+        for i in range(self.DoF):
+            if self.JOINT_TYPES[i] == 'P':
+                joints_inv[i] /= self.scaling
+                
+        return wrap_angle(joints_inv)
 
     def get_current_jaw_position(self) -> float:
         """ Get the current angle of the jaw in radians. """

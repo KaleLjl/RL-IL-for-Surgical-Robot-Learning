@@ -70,6 +70,10 @@ class DVRKEnv(gym.Env):
         # Re-create the scene on every reset, matching SurRoL's behavior
         self._pre_setup()
         
+        # Sample a new goal
+        self.goal = self._sample_goal()
+        self._sample_goal_callback()
+
         # Re-enable rendering and set camera
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
         self._setup_camera()
@@ -145,9 +149,27 @@ class DVRKEnv(gym.Env):
         # Setup subclass-specific environment (creates robot, loads objects)
         self._env_setup()
 
+        # Load goal visualization sphere
+        self.goal_vis_id = p.loadURDF(os.path.join(ASSET_DIR_PATH, 'sphere/sphere.urdf'),
+                                      globalScaling=getattr(self, 'SCALING', 1.0))
+        self.obj_ids['fixed'].append(self.goal_vis_id)
+
 
     # Methods to be implemented by subclasses
     # --------------------------------------------
+
+    def _sample_goal(self) -> np.ndarray:
+        """
+        Samples a new goal and returns it.
+        """
+        raise NotImplementedError
+
+    def _sample_goal_callback(self):
+        """
+        A custom callback that is called after sampling a new goal.
+        Can be used to implement custom visualizations, like moving a goal marker.
+        """
+        pass
 
     def _env_setup(self):
         """

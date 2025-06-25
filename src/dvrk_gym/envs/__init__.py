@@ -6,7 +6,7 @@ from gymnasium.envs.registration import register
 from .needle_reach import NeedleReachEnv
 
 register(
-    id='dvrk_gym/NeedleReach-v0',
-    entry_point='dvrk_gym.envs:NeedleReachEnv',
+    id='NeedleReach-v0',
+    entry_point='dvrk_gym.envs.needle_reach:NeedleReachEnv',
     max_episode_steps=100,
 )
