@@ -123,3 +123,44 @@ A critical pattern emerged during the debugging of the `imitation` library's iss
     ```
 
 -   **Pattern**: When encountering persistent, unexplainable errors within a library's data handling pipeline, always consider "dumbing down" your data format. By converting complex structures to simple, flat arrays, you can circumvent potential bugs in the library's internal processing and regain control over the data pipeline. This is a powerful fallback strategy for ensuring compatibility and robustness.
+
+## 6. Standardized Policy Development Workflow
+To ensure a systematic, repeatable, and extensible approach to developing policies for new robotic tasks, the project has adopted a standardized three-stage workflow. This workflow leverages the strengths of different learning paradigms to progressively build more capable and robust agents.
+
+```mermaid
+graph TD
+    A[1. Collect Expert Data] --> B{2. Train BC Policy};
+    B --> C{3. Fine-tune with DAPG};
+    C --> D{4. (Optional) Train RRL};
+    D --> E[5. Deploy & Evaluate];
+
+    subgraph "Imitation Learning (Offline)"
+        B
+    end
+
+    subgraph "Reinforcement Learning (Online)"
+        C
+        D
+    end
+
+    style B fill:#d4f0db,stroke:#333,stroke-width:2px
+    style C fill:#f0e4d4,stroke:#333,stroke-width:2px
+    style D fill:#f0e4d4,stroke:#333,stroke-width:2px
+```
+
+### Stage 1: Behavioral Cloning (BC)
+-   **Goal**: Quickly establish a baseline policy that can successfully perform the task under ideal conditions.
+-   **Process**: Train a policy using supervised learning on a collected set of expert demonstrations.
+-   **Outcome**: A functional but potentially brittle policy that is highly dependent on the quality and coverage of the expert data. It is susceptible to "covariate shift."
+
+### Stage 2: Demonstration-Augmented Policy Gradient (DAPG)
+-   **Goal**: Improve the robustness and performance of the BC policy.
+-   **Process**: Use the pre-trained BC policy as a starting point for an online RL algorithm (like PPO). The agent interacts with the environment to learn how to recover from errors and optimize for the task reward, while a loss term discourages it from deviating too far from the expert's style.
+-   **Outcome**: A more robust policy that can handle minor perturbations and has learned to recover from states not seen in the expert data.
+
+### Stage 3: Residual Reinforcement Learning (RRL) (Optional / Advanced)
+-   **Goal**: Achieve the highest level of performance and safety, especially for Sim-to-Real transfer.
+-   **Process**: Use a high-quality, deterministic policy (like the one from BC or DAPG) as a "base controller." A new, separate RL agent is then trained to learn a small "residual" or "corrective" action that is added to the base controller's action.
+-   **Outcome**: A highly stable and safe policy. The base controller handles the bulk of the task, while the residual agent learns to make small, fine-grained adjustments to compensate for environmental variations or imperfections in the base policy.
+
+This workflow provides a clear path from initial data collection to a highly refined, robust policy, and is the standard pattern to be followed for any new task introduced to the `dvrk_gym` environment.

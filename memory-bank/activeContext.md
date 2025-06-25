@@ -10,12 +10,22 @@ The final, robust solution was to **circumvent the bug by flattening the `Dict` 
 
 This entire debugging journey has been a critical learning experience and has been documented in `systemPatterns.md`.
 
-## 2. Next Immediate Actions
-The successful BC evaluation provides a strong baseline. The project will now proceed with the following core ML objectives:
+## 2. Next Immediate Actions & Standardized Workflow
+Based on the success of the BC agent, we have established a standardized, three-stage workflow for developing and refining policies. This workflow will be applied first to the `NeedleReach-v0` task and then serve as a blueprint for all future tasks.
 
-1.  **Implement RL Training Pipeline**: This is the top priority. The `scripts/train_rl.py` file needs to be developed to train an agent from scratch using a suitable algorithm from Stable-Baselines3 (e.g., PPO or SAC) on the `NeedleReach-v0` environment.
-2.  **Compare RL vs. BC Performance**: Once a satisfactory RL agent is trained, its performance (success rate, sample efficiency, final reward) will be benchmarked against the 94% success rate achieved by the BC agent.
-3.  **Hyperparameter Tuning**: Depending on the initial RL results, we may need to perform hyperparameter tuning for either or both the RL and BC models to maximize performance.
+1.  **Stage 1: Behavioral Cloning (BC) - *Completed for NeedleReach***
+    -   **Goal**: Train a baseline policy via imitation learning.
+    -   **Status**: A BC agent with a 94% success rate has been successfully trained and evaluated. This serves as our performance baseline.
+
+2.  **Stage 2: Demonstration-Augmented Policy Gradient (DAPG) - *Current Priority***
+    -   **Goal**: Enhance the BC policy's robustness and performance by fine-tuning it with RL. DAPG is chosen for its sample efficiency and ability to produce policies that are more robust to "covariate shift" than pure BC.
+    -   **Immediate Task**: Create a `scripts/train_dapg.py` script using the `imitation` library to train a DAPG agent. This will leverage our existing expert data and the "Flattening for Robustness" pattern.
+
+3.  **Stage 3: Residual Reinforcement Learning (RRL) - *Future Work***
+    -   **Goal**: Further improve performance and safety by learning a small "residual" correction on top of a high-quality base policy.
+    -   **Plan**: Once a satisfactory DAPG policy is trained, it will serve as the base controller for an RRL agent. This approach is expected to offer the highest potential for safe and effective Sim-to-Real transfer.
+
+This structured approach (BC -> DAPG -> RRL) provides a clear, systematic, and extensible path for tackling complex robotic manipulation tasks.
 
 ## 3. Key Learnings & Decisions
 -   **Environment Replication is Deceptive**: Replicating a PyBullet environment requires a meticulous, multi-layered approach. The process revealed several non-obvious pitfalls that are now documented in `systemPatterns.md` under "PyBullet Environment Configuration Patterns". This documentation is critical for efficiently configuring future tasks.
