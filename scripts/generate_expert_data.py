@@ -1,100 +1,81 @@
 import os
+import pickle
 import gymnasium as gym
 import numpy as np
 import dvrk_gym  # Import to register the environment
 
-def generate_expert_data(env_name, num_episodes=100, data_path="expert_data.npz"):
+def generate_expert_data(env_name, num_episodes=100, data_path="expert_data.pkl"):
     """
-    Generates expert demonstration data using the environment's oracle.
+    Generates expert demonstration data and saves it as a list of trajectories.
 
     Args:
         env_name (str): The name of the Gymnasium environment.
         num_episodes (int): The number of expert trajectories to generate.
-        data_path (str): The path to save the expert data file.
+        data_path (str): The path to save the pickled expert data file.
     """
     print(f"Initializing environment: {env_name}")
-    # Use 'human' render_mode to visualize the data collection process
     env = gym.make(env_name, render_mode='human')
 
-    trajectories = {
-        'actions': [],
-        'obs': [],
-        'rewards': [],
-        'episode_returns': [],
-        'episode_starts': [],
-    }
+    all_trajectories = []
+    total_transitions = 0
 
     print(f"Starting data generation for {num_episodes} episodes...")
 
     for i in range(num_episodes):
         print(f"--- Episode {i + 1}/{num_episodes} ---")
-        episode_obs, episode_actions, episode_rewards = [], [], []
         
         obs, info = env.reset()
         done = False
         
-        trajectories['episode_starts'].append(True)
+        episode_obs = [obs]
+        episode_actions = []
         
         while not done:
             action = env.get_oracle_action(obs)
             
-            episode_obs.append(obs)
-            episode_actions.append(action)
-            
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
             
-            episode_rewards.append(reward)
+            episode_obs.append(obs)
+            episode_actions.append(action)
 
             if done:
                 print(f"Episode finished. Success: {info.get('is_success', False)}")
-
-        # Append episode data
-        trajectories['obs'].extend(episode_obs)
-        trajectories['actions'].extend(episode_actions)
-        trajectories['rewards'].extend(episode_rewards)
-        trajectories['episode_returns'].append(np.sum(episode_rewards))
         
-        # Mark the end of the episode
-        # We need to add one more 'episode_starts' marker for the next episode
-        # The imitation library expects len(episode_starts) == len(obs)
-        # Since we don't add the final observation, we mark the start of the *next* theoretical step
-        # as False, except for the very last one.
-        for _ in range(len(episode_obs) - 1):
-             trajectories['episode_starts'].append(False)
+        # Convert lists to numpy arrays
+        # Observations need to be converted from a list of dicts to a dict of lists, then to a dict of arrays
+        obs_keys = episode_obs[0].keys()
+        final_obs = {key: np.array([o[key] for o in episode_obs]) for key in obs_keys}
 
+        # --- Verification Step ---
+        # For each key in the observation dictionary, its length must be len(actions) + 1
+        num_actions = len(episode_actions)
+        for key, value in final_obs.items():
+            assert len(value) == num_actions + 1, \
+                f"Mismatch in trajectory lengths for key '{key}': obs_len={len(value)}, acts_len={num_actions}"
 
-    # Convert lists to numpy arrays
-    # The imitation library expects observations to be a dictionary of arrays
-    # and actions to be a single array.
-    
-    # Process observations
-    obs_dict = {}
-    if len(trajectories['obs']) > 0:
-        keys = trajectories['obs'][0].keys()
-        for key in keys:
-            obs_dict[key] = np.array([o[key] for o in trajectories['obs']])
-
-    # Finalize data structure for saving
-    expert_data = {
-        'actions': np.array(trajectories['actions']),
-        'obs': obs_dict,
-        'rewards': np.array(trajectories['rewards']),
-        'episode_returns': np.array(trajectories['episode_returns']),
-        'episode_starts': np.array(trajectories['episode_starts'], dtype=bool),
-    }
+        # Create trajectory dictionary
+        trajectory = {
+            "obs": final_obs,
+            "acts": np.array(episode_actions),
+        }
+        all_trajectories.append(trajectory)
+        total_transitions += len(episode_actions)
 
     # Ensure the directory exists
     os.makedirs(os.path.dirname(data_path), exist_ok=True)
     
-    # Save the data
-    np.savez_compressed(data_path, **expert_data)
+    # Save the data using pickle
+    with open(data_path, "wb") as f:
+        pickle.dump(all_trajectories, f)
+        
     print(f"\nExpert data saved successfully to {data_path}")
-    print(f"Total transitions collected: {len(expert_data['actions'])}")
+    print(f"Total trajectories collected: {len(all_trajectories)}")
+    print(f"Total transitions collected: {total_transitions}")
 
     env.close()
 
 if __name__ == "__main__":
     ENV_NAME = "NeedleReach-v0"
-    DATA_SAVE_PATH = os.path.join("data", "expert_data_needle_reach.npz")
+    DATA_SAVE_PATH = os.path.join("data", "expert_data_needle_reach.pkl")
     generate_expert_data(ENV_NAME, num_episodes=50, data_path=DATA_SAVE_PATH)
