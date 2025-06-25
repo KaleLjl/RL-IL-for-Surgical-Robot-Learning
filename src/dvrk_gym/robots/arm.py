@@ -250,10 +250,35 @@ class Arm(object):
 
     def inverse_kinematics(self, pose_world: tuple, link_index: int = None) -> np.ndarray:
         """
-        Compute the inverse kinematics.
-        This method should be implemented by the specific robot arm subclass.
+        Compute the inverse kinematics using PyBullet built-in methods.
+        This is the original, functional implementation from SurRoL.
+        Given the pose in the world frame, output the joint positions normalized by self.scaling.
         """
-        raise NotImplementedError
+        if link_index is None:
+            link_index = self.EEF_LINK_INDEX
+        
+        # Use PyBullet's IK solver
+        joints_inv = p.calculateInverseKinematics(
+            bodyUniqueId=self.body,
+            endEffectorLinkIndex=link_index,
+            targetPosition=pose_world[0],
+            targetOrientation=pose_world[1],
+            lowerLimits=self.limits['lower'][:self.DoF],
+            upperLimits=self.limits['upper'][:self.DoF],
+            jointRanges=self.limits['upper'][:self.DoF] - self.limits['lower'][:self.DoF],
+            restPoses=[0] * self.DoF,
+            residualThreshold=1e-9,
+            maxNumIterations=200
+        )
+        
+        joints_inv = np.array(joints_inv)
+        
+        # Un-scale prismatic joints
+        for i in range(self.DoF):
+            if self.JOINT_TYPES[i] == 'P':
+                joints_inv[i] /= self.scaling
+                
+        return wrap_angle(joints_inv[:self.DoF])
 
     def get_jacobian_spatial(self, qs=None) -> np.ndarray:
         """
