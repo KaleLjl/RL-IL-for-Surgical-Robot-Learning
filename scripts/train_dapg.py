@@ -1,5 +1,6 @@
 import os
 import pickle
+import time
 import gymnasium as gym
 import numpy as np
 import torch
@@ -126,12 +127,17 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir):
 if __name__ == "__main__":
     ENV_NAME = "NeedleReach-v0"
     EXPERT_DATA_PATH = os.path.join("data", "expert_data_needle_reach.pkl")
-    MODEL_SAVE_PATH = os.path.join("models", "dapg_needle_reach.zip")
-    LOG_DIR = os.path.join("logs", "dapg_needle_reach")
-    
+
+    # Create a unique directory for this experiment
+    experiment_name = f"dapg_needle_reach_{int(time.time())}"
+    log_dir = os.path.join("logs", experiment_name)
+    model_dir = "models"
+    # Save model in the models/ dir
+    model_save_path = os.path.join(model_dir, f"{experiment_name}.zip")
+
     train_dapg_agent(
         env_name=ENV_NAME,
         expert_data_path=EXPERT_DATA_PATH,
-        model_save_path=MODEL_SAVE_PATH,
-        log_dir=LOG_DIR,
+        model_save_path=model_save_path,
+        log_dir=log_dir,
     )

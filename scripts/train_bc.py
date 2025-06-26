@@ -139,8 +139,9 @@ if __name__ == "__main__":
     # Create a unique directory for this experiment
     experiment_name = f"bc_needle_reach_{int(time.time())}"
     log_dir = os.path.join("logs", experiment_name)
-    # Save model in the experiment dir
-    model_save_path = os.path.join(log_dir, "bc_needle_reach.zip")
+    model_dir = "models"
+    # Save model in the models/ dir
+    model_save_path = os.path.join(model_dir, f"{experiment_name}.zip")
 
     train_bc_agent(
         env_name=ENV_NAME,

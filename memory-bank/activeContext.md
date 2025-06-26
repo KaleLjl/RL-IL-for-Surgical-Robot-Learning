@@ -1,37 +1,28 @@
 # Active Context
 
-## 1. Current Focus: Reinforcement Learning Implementation
-With the successful training and evaluation of the Behavioral Cloning (BC) agent (94% success rate), the project's focus now shifts to the next major milestone: **implementing a Reinforcement Learning (RL) pipeline.**
+## 1. Current Focus: Diagnosing Critical PPO Bug
+The project's primary focus has shifted to diagnosing a critical and paradoxical bug found in the pure Reinforcement Learning (RL) agent trained with PPO.
 
-### The "imitation" Library Bug & The Solution
-After a lengthy and systematic debugging process, we conclusively proved that the `imitation` library (v1.0.1) has a fundamental bug in its handling of `gymnasium.spaces.Dict` observation spaces. The library's internal validation logic incorrectly calculates the length of dictionary-based observations, leading to persistent `ValueError` exceptions.
+### The Problem: "Learning" with 0% Success
+- **The Paradox**: The PPO agent, when trained, shows all the signs of successful learning in its TensorBoard metrics (e.g., rising rewards, decreasing loss, decreasing entropy). However, when the resulting model is evaluated in the environment, it achieves a **0% success rate**.
+- **The Behavior**: Qualitative observation during evaluation revealed the root cause: the trained agent executes the **same repetitive action** regardless of the environment's state or the goal's position.
+- **The Hypothesis**: The agent's policy has effectively ignored all observation inputs and degenerated into a constant function. This strongly suggests a fundamental issue in how the `MultiInputPolicy` is processing or utilizing the `Dict` observation space provided by our custom environment. The policy is "learning" to maximize a flawed reward signal in training, but this learned behavior is useless for actually solving the task.
 
-The final, robust solution was to **circumvent the bug by flattening the `Dict` observations into a single `Box` (NumPy array) space at the data-loading stage**. This was implemented in the `train_bc.py` script. By feeding the `imitation.BC` trainer a simple, flat array bottlene, we avoided all of the library's problematic internal data processing logic and successfully trained the agent.
+## 2. Immediate Actions: Systematic Diagnosis
+In accordance with our debugging philosophy, we will not make speculative changes. Instead, we will proceed with a systematic plan to prove our hypothesis.
 
-This entire debugging journey has been a critical learning experience and has been documented in `systemPatterns.md`.
+1.  **Create a Minimal, Reproducible Example (MRE)**:
+    -   **Goal**: To definitively prove that the trained policy ignores observation inputs.
+    -   **Implementation**: A new diagnostic script (`scripts/diagnose_policy.py` or similar) will be created.
+    -   **Process**:
+        1.  Load the trained PPO model.
+        2.  Create two different, handcrafted observation dictionaries where only the `desired_goal` is different.
+        3.  Call `model.predict()` on both observations.
+        4.  Compare the resulting actions.
+    -   **Expected Outcome**: We predict the script will show that the predicted action is **identical** for both distinct observations, thus confirming the bug.
 
-## 2. Next Immediate Actions & Standardized Workflow
-Based on the success of the BC agent, we have established a standardized, three-stage workflow for developing and refining policies. This workflow will be applied first to the `NeedleReach-v0` task and then serve as a blueprint for all future tasks.
+2.  **Analyze Environment & Policy Interaction**:
+    -   **Goal**: If the MRE confirms the bug, we must investigate *why* the information is being ignored.
+    -   **Next Steps**: This will involve a deep dive into the `NeedleReach-v0` environment's `_get_obs()` method and the Stable-Baselines3 `MultiInputPolicy` source code to understand how the `Dict` data is passed, processed, and fed into the neural network.
 
-1.  **Stage 1: Behavioral Cloning (BC) - *Completed for NeedleReach***
-    -   **Goal**: Train a baseline policy via imitation learning.
-    -   **Status**: A BC agent with a 94% success rate has been successfully trained and evaluated. This serves as our performance baseline.
-
-2.  **Stage 2: Demonstration-Augmented Policy Gradient (DAPG) - *Training in Progress***
-    -   **Goal**: Enhance the BC policy's robustness and performance by fine-tuning it with RL.
-    -   **Implementation**: We have built a custom DAPG-style algorithm, `PPOWithBCLoss`, which integrates a behavioral cloning loss into the standard PPO training loop from `stable-baselines3`.
-    -   **Status**: The training for the `NeedleReach-v0` task is currently running. The process is being monitored via TensorBoard, and the custom `bc_loss` is being successfully logged, validating our implementation.
-    -   **Immediate Task**: Monitor the training until completion, then create an evaluation script to assess the performance of the resulting model against the BC baseline.
-
-3.  **Stage 3: Residual Reinforcement Learning (RRL) - *Future Work***
-    -   **Goal**: Further improve performance and safety by learning a small "residual" correction on top of a high-quality base policy.
-    -   **Plan**: Once a satisfactory DAPG policy is trained, it will serve as the base controller for an RRL agent. This approach is expected to offer the highest potential for safe and effective Sim-to-Real transfer.
-
-This structured approach (BC -> DAPG -> RRL) provides a clear, systematic, and extensible path for tackling complex robotic manipulation tasks.
-
-## 3. Key Learnings & Decisions
--   **Environment Replication is Deceptive**: Replicating a PyBullet environment requires a meticulous, multi-layered approach. The process revealed several non-obvious pitfalls that are now documented in `systemPatterns.md` under "PyBullet Environment Configuration Patterns". This documentation is critical for efficiently configuring future tasks.
--   **Control is paramount**: Owning the entire environment stack, from simulation to the learning algorithm, gives us the control needed to debug effectively and build a stable platform. This decision was validated by the successful debugging of the `NeedleReach-v0` environment.
--   **SurRoL is a technical dead end**: The VNC experiment provided the final, conclusive evidence. The framework's reliance on a legacy graphics stack (TF 1.x, CUDA 10.0) is fundamentally incompatible with modern NVIDIA drivers, leading to unresolvable `EGL_BAD_CONFIG` errors. Further attempts to patch it are a poor use of time.
--   **PyBullet over Isaac Sim**: While Isaac Sim is powerful, its complexity and high barrier to entry make it unsuitable for our immediate goal of rapid prototyping and algorithm validation. PyBullet offers the best balance of performance, ease of use, and flexibility for this project.
--   **Flattening Data is a Robust Fallback**: When a library has buggy or poorly documented support for complex data structures like `Dict` spaces, the most reliable solution is to preprocess the data into a simple, flat format (`Box` space) before passing it to the library. This circumvents internal bugs and is a valuable, pragmatic engineering pattern.
+This structured diagnostic process is the highest priority.
