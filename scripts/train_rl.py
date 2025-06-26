@@ -2,6 +2,7 @@ import gymnasium as gym
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 import dvrk_gym
+from dvrk_gym.utils.wrappers import FlattenDictObsWrapper
 import os
 import time
 
@@ -40,7 +41,12 @@ def main():
     # Create the Gym environment
     # The 'render_mode' is set to 'human' to visualize the training process.
     # This requires a display connection (e.g., X11 forwarding).
-    env = gym.make(env_name, render_mode='human')
+    # For pure RL, we use the dense reward function.
+    print("Creating environment with DENSE reward for pure RL training.")
+    env = gym.make(env_name, render_mode='human', use_dense_reward=True)
+    # Apply the wrapper to flatten the dictionary observation space
+    print("Applying FlattenDictObsWrapper to the environment.")
+    env = FlattenDictObsWrapper(env)
     
     # --- Agent and Training Setup ---
     # Checkpoint callback to save model periodically inside the run's checkpoint folder
@@ -53,9 +59,9 @@ def main():
     )
 
     # Initialize the PPO agent
-    # Using MultiInputPolicy because the observation space is a dictionary
+    # Using MlpPolicy because the observation space is now a flattened Box
     model = PPO(
-        "MultiInputPolicy", 
+        "MlpPolicy", 
         env, 
         verbose=1, 
         tensorboard_log=tensorboard_log_dir

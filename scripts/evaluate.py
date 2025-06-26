@@ -7,7 +7,7 @@ from stable_baselines3 import PPO
 import dvrk_gym
 from dvrk_gym.utils.wrappers import FlattenDictObsWrapper
 
-def evaluate_agent(env_name, model_path, n_episodes, is_flattened):
+def evaluate_agent(env_name, model_path, n_episodes, is_flattened, use_dense_reward):
     """
     Evaluates a trained agent in the specified environment.
 
@@ -16,19 +16,27 @@ def evaluate_agent(env_name, model_path, n_episodes, is_flattened):
         model_path (str): Path to the trained model (.zip file).
         n_episodes (int): The number of episodes to run for evaluation.
         is_flattened (bool): Whether the model was trained on flattened observations.
+        use_dense_reward (bool): Whether to use the dense reward for evaluation.
     """
     print(f"--- Starting Evaluation ---")
     print(f"Environment: {env_name}")
     print(f"Model Path: {model_path}")
     print(f"Number of Episodes: {n_episodes}")
     print(f"Using Flattened Observations: {is_flattened}")
+    print(f"Using Dense Reward: {use_dense_reward}")
 
     # --- 1. Create Environment ---
+    # Build keyword arguments for environment creation
+    env_kwargs = {'render_mode': 'human'}
+    if use_dense_reward:
+        env_kwargs['use_dense_reward'] = True
+    
+    env = gym.make(env_name, **env_kwargs)
+
     # Use a wrapper if the policy was trained on flattened observations
     if is_flattened:
-        env = FlattenDictObsWrapper(gym.make(env_name, render_mode='human'))
-    else:
-        env = gym.make(env_name, render_mode='human')
+        print("Applying FlattenDictObsWrapper to the environment.")
+        env = FlattenDictObsWrapper(env)
     
     print("Environment created.")
 
@@ -129,6 +137,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Add this flag if the model was trained on flattened observations."
     )
+    parser.add_argument(
+        "--dense-reward",
+        action="store_true",
+        help="Add this flag to use the dense reward function during evaluation."
+    )
 
     args = parser.parse_args()
 
@@ -136,5 +149,6 @@ if __name__ == "__main__":
         env_name=args.env_name,
         model_path=args.model_path,
         n_episodes=args.n_episodes,
-        is_flattened=args.flatten
+        is_flattened=args.flatten,
+        use_dense_reward=args.dense_reward
     )

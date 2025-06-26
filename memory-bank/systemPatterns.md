@@ -102,7 +102,40 @@ graph TD
 
 This architecture makes adding new tasks straightforward, as developers can focus solely on the task-specific logic without worrying about the underlying environment setup.
 
-## 5. Data Handling Pattern: Flattening for Robustness
+## 5. Reward Shaping for Algorithm Compatibility
+
+A critical pattern for ensuring successful training across different learning paradigms (pure RL vs. imitation-based) is the flexible implementation of reward functions.
+
+-   **Problem**: Different learning algorithms have vastly different requirements for reward signals.
+    -   **Pure RL (e.g., PPO)**: These algorithms learn from scratch via trial and error. They require a **dense reward** signal that provides a continuous gradient of feedback (e.g., "you're getting warmer/colder") to guide exploration effectively. Without it, they get stuck, as they cannot distinguish between a "bad" action and a "less bad" action.
+    -   **Imitation-Augmented RL (e.g., DAPG)**: These algorithms start with a strong prior from expert demonstrations. They benefit from a **sparse reward** signal (e.g., a simple `0` for success and `-1` for failure). This provides a clear, unambiguous final objective without "hacking" the agent's behavior by making it chase a potentially flawed dense reward metric instead of following the expert's style.
+
+-   **Solution**: The environment should support both reward types, selectable at initialization. This is achieved by adding a constructor argument to the task-specific environment class.
+
+    ```python
+    # In the __init__ of a task environment like NeedleReachEnv
+    def __init__(self, render_mode: str = None, use_dense_reward: bool = False):
+        self.use_dense_reward = use_dense_reward
+        super().__init__(...)
+
+    # The main _get_reward method acts as a router
+    def _get_reward(self, obs: dict) -> float:
+        if self.use_dense_reward:
+            return self._get_dense_reward(obs)
+        else:
+            return self._get_sparse_reward(obs)
+
+    # Specific implementations for each reward type
+    def _get_sparse_reward(self, obs: dict) -> float:
+        return 0.0 if self._is_success(obs) else -1.0
+
+    def _get_dense_reward(self, obs: dict) -> float:
+        return -np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+    ```
+
+-   **Pattern**: By implementing this switch, the training script for pure RL can enable dense rewards (`gym.make("MyEnv-v0", use_dense_reward=True)`), while scripts for DAPG can use the default sparse reward. This maintains a single, clean environment implementation that is compatible with the entire standardized policy development workflow.
+
+## 6. Data Handling Pattern: Flattening for Robustness
 
 A critical pattern emerged during the debugging of the `imitation` library's issues with `Dict` observation spaces.
 
@@ -124,7 +157,7 @@ A critical pattern emerged during the debugging of the `imitation` library's iss
 
 -   **Pattern**: When encountering persistent, unexplainable errors within a library's data handling pipeline, always consider "dumbing down" your data format. By converting complex structures to simple, flat arrays, you can circumvent potential bugs in the library's internal processing and regain control over the data pipeline. This is a powerful fallback strategy for ensuring compatibility and robustness.
 
-## 6. Standardized Policy Development Workflow
+## 7. Standardized Policy Development Workflow
 To ensure a systematic, repeatable, and extensible approach to developing policies for new robotic tasks, the project has adopted a standardized three-stage workflow. This workflow leverages the strengths of different learning paradigms to progressively build more capable and robust agents.
 
 ```mermaid
@@ -164,3 +197,15 @@ graph TD
 -   **Outcome**: A highly stable and safe policy. The base controller handles the bulk of the task, while the residual agent learns to make small, fine-grained adjustments to compensate for environmental variations or imperfections in the base policy.
 
 This workflow provides a clear path from initial data collection to a highly refined, robust policy, and is the standard pattern to be followed for any new task introduced to the `dvrk_gym` environment.
+
+## 8. Evaluation Script Specialization
+
+Just as training scripts are specialized, evaluation scripts must also be tailored to the type of model they are intended to evaluate.
+
+-   **Problem**: Different training algorithms (`bc.BC`, `PPO`, etc.) save their models in formats that, while often compatible at the policy level, may have different metadata or structural expectations. A generic evaluation script might fail to load or correctly run a model it wasn't designed for.
+-   **Solution**: Maintain separate, specialized evaluation scripts for different model families.
+    -   **`evaluate.py`**: This script is designed to evaluate models that adhere to the standard Stable-Baselines3 `BaseAlgorithm` structure, which includes a full actor-critic architecture. It uses `PPO.load()` to load the model.
+        -   **Use Case**: For models trained with `train_rl.py` (PPO) and `train_dapg.py` (DAPG, which is PPO-based).
+    -   **`evaluate_bc.py`**: This script is specifically for evaluating policies trained via pure Behavioral Cloning (`bc.BC` from the `imitation` library). It handles the specific way BC policies are saved and loaded.
+        -   **Use Case**: For models trained with `train_bc.py`.
+-   **Pattern**: When evaluating a model, always select the corresponding evaluation script to ensure compatibility and prevent loading errors. This separation avoids making one script overly complex with conditional logic and ensures that each evaluation process is clean and correct for the model type.

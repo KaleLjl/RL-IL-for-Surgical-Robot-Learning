@@ -12,16 +12,20 @@
 - **Status**: Complete.
 - **Outcome**: Successfully trained a Behavioral Cloning (BC) agent using the `imitation` library. This process involved diagnosing and circumventing a major bug in the library's handling of `Dict` observation spaces by implementing a data-flattening strategy. This success validated the custom environment and our debugging capabilities.
 
-## 4. ML Validation Phase 2: Reinforcement Learning (Current)
-- **Status**: **Blocked.**
-- **What Works**:
-    - A robust directory structure for managing experiments, runs, and checkpoints has been established and documented.
-    - The PPO training script (`train_rl.py`) runs successfully, generating logs that *appear* to show learning (rising rewards, etc.).
-    - A generic evaluation script (`evaluate.py`) has been created.
-- **The Blocker: The "Constant Action" Bug**:
-    - **Symptom**: The trained PPO model, despite positive training metrics, achieves 0% success in evaluation.
-    - **Root Cause Analysis**: The agent is observed to perform the same action repetitively, regardless of the goal. This indicates the policy has degenerated and is ignoring observation inputs.
-    - **Hypothesis**: There is a fundamental issue in how the `MultiInputPolicy` is handling the `Dict` observation space from our environment.
-- **Immediate Next Steps**:
-    1.  **Diagnose via MRE**: Create a minimal script to prove that the model produces the same action for different observations.
-    2.  **Isolate the Fault**: Based on the MRE result, investigate the data pipeline from the environment's `_get_obs()` method through the policy's forward pass to find where the `desired_goal` information is being lost or ignored.
+## 4. ML Validation Phase 2: Reinforcement Learning
+- **Status**: **Complete.**
+- **Outcome**: Successfully trained a PPO agent with an 80% success rate after a complex debugging process. This validated the pure RL portion of our development workflow.
+- **Evolution of the "Constant Action" Bug**:
+    - **Initial State**: The PPO agent failed to learn, producing a 0% success rate.
+    - **Investigation**: We initially suspected a bug in SB3's `MultiInputPolicy` and implemented a `FlattenDictObsWrapper` as a workaround. When this also failed, we analyzed the difference between training (`deterministic=False`) and evaluation (`deterministic=True`) behavior.
+    - **Root Cause**: The final root cause was identified as an improper **sparse reward** function for a pure RL agent. The lack of a guiding signal caused the agent to converge on a suboptimal "do nothing" policy.
+    - **Resolution**: A **dense reward** system (`reward = -distance`) was implemented, selectable via an environment flag. Training with the combination of dense rewards and the flattened observation space proved successful.
+    - **Open Question**: The necessity of the `FlattenDictObsWrapper` is now unconfirmed, as the primary issue was the reward signal. This is noted for potential future simplification.
+
+## 5. ML Validation Phase 3: Demonstration-Augmented Policy Gradient (DAPG)
+- **Status**: **Pending.**
+- **Next Steps**:
+    1.  Create and/or verify the `train_dapg.py` script.
+    2.  This script will use the successful BC model as a pre-trained starting point.
+    3.  Crucially, it will use the environment's **sparse reward** function, which is appropriate for this algorithm, as per our established `reward-system-guidelines`.
+    4.  Document the entire workflow in a user-facing `README.md`.

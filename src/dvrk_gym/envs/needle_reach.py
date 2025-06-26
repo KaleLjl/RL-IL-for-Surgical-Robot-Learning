@@ -32,9 +32,10 @@ class NeedleReachEnv(DVRKEnv):
     POSE_PSM1 = ((0.05, 0.24, 0.8024), (0, 0, -(90 + 20) / 180 * np.pi))
     DISTANCE_THRESHOLD = 0.005
 
-    def __init__(self, render_mode: str = None):
-        # Store render_mode
+    def __init__(self, render_mode: str = None, use_dense_reward: bool = False):
+        # Store render_mode and reward setting
         self.render_mode = render_mode
+        self.use_dense_reward = use_dense_reward
         
         # Correctly initialize workspace limits with offset before scaling
         workspace_limits = np.asarray(self.WORKSPACE_LIMITS) \
@@ -175,8 +176,32 @@ class NeedleReachEnv(DVRKEnv):
         return dist < self.success_threshold
 
     def _get_reward(self, obs: dict) -> float:
-        # Sparse reward: -1 for failure, 0 for success
+        """
+        Calculates the reward based on the current observation.
+        This method routes to the appropriate reward function based on the
+        `use_dense_reward` flag set during initialization.
+        """
+        if self.use_dense_reward:
+            return self._get_dense_reward(obs)
+        else:
+            return self._get_sparse_reward(obs)
+
+    def _get_sparse_reward(self, obs: dict) -> float:
+        """
+        Sparse reward: -1 for failure, 0 for success.
+        Ideal for DAPG and other imitation learning setups.
+        """
         return -1.0 if not self._is_success(obs) else 0.0
+
+    def _get_dense_reward(self, obs: dict) -> float:
+        """
+        Dense reward: Negative distance to the goal.
+        This encourages the agent to move closer to the goal at every step,
+        which is crucial for pure RL algorithms like PPO.
+        """
+        dist = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        # The reward is the negative distance. Closer is better (less negative).
+        return -dist
 
     def _get_obs_robot_state(self):
         """

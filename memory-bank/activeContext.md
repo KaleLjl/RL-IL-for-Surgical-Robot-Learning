@@ -1,28 +1,26 @@
 # Active Context
 
-## 1. Current Focus: Diagnosing Critical PPO Bug
-The project's primary focus has shifted to diagnosing a critical and paradoxical bug found in the pure Reinforcement Learning (RL) agent trained with PPO.
+## 1. Current Focus: Transitioning to DAPG
+Our primary focus has shifted from debugging the pure RL agent to preparing for the next stage of the project: training a Demonstration-Augmented Policy Gradient (DAPG) agent. This follows the successful resolution of the PPO training bug.
 
-### The Problem: "Learning" with 0% Success
-- **The Paradox**: The PPO agent, when trained, shows all the signs of successful learning in its TensorBoard metrics (e.g., rising rewards, decreasing loss, decreasing entropy). However, when the resulting model is evaluated in the environment, it achieves a **0% success rate**.
-- **The Behavior**: Qualitative observation during evaluation revealed the root cause: the trained agent executes the **same repetitive action** regardless of the environment's state or the goal's position.
-- **The Hypothesis**: The agent's policy has effectively ignored all observation inputs and degenerated into a constant function. This strongly suggests a fundamental issue in how the `MultiInputPolicy` is processing or utilizing the `Dict` observation space provided by our custom environment. The policy is "learning" to maximize a flawed reward signal in training, but this learned behavior is useless for actually solving the task.
+### Summary of PPO Bug Resolution
+- **Initial Problem**: The PPO agent, regardless of policy (`MultiInputPolicy` or `MlpPolicy`), failed to learn a meaningful strategy, resulting in a 0% success rate during evaluation.
+- **Diagnostic Journey**:
+    1.  Our initial hypothesis was a bug in Stable-Baselines3's `MultiInputPolicy` when handling `Dict` observation spaces. This led us to implement a **"Flattening Fallback"** using a `FlattenDictObsWrapper` and `MlpPolicy`.
+    2.  When the flattened approach also failed, we discovered the true root cause: the **sparse reward function** was insufficient for a pure RL agent to learn effectively from scratch.
+    3.  The final, successful solution involved implementing a **switchable reward system** in the environment. We trained the PPO agent using a **dense reward** (`reward = -distance`) combined with the **flattened observation space**. This produced a successful model with an 80% success rate.
+- **Key Learnings**:
+    -   The primary blocker for pure RL was the sparse reward signal.
+    -   The necessity of the `FlattenDictObsWrapper` is now **unconfirmed**. While it was kept as a safety measure, it's possible that `MultiInputPolicy` could work correctly with a dense reward. This can be revisited later if needed.
 
-## 2. Immediate Actions: Systematic Diagnosis
-In accordance with our debugging philosophy, we will not make speculative changes. Instead, we will proceed with a systematic plan to prove our hypothesis.
+## 2. Immediate Actions: Preparing for DAPG
+With a functional pure RL training pipeline, we now proceed to the next logical step in our development workflow.
 
-1.  **Create a Minimal, Reproducible Example (MRE)**:
-    -   **Goal**: To definitively prove that the trained policy ignores observation inputs.
-    -   **Implementation**: A new diagnostic script (`scripts/diagnose_policy.py` or similar) will be created.
-    -   **Process**:
-        1.  Load the trained PPO model.
-        2.  Create two different, handcrafted observation dictionaries where only the `desired_goal` is different.
-        3.  Call `model.predict()` on both observations.
-        4.  Compare the resulting actions.
-    -   **Expected Outcome**: We predict the script will show that the predicted action is **identical** for both distinct observations, thus confirming the bug.
+1.  **Documentation**:
+    -   **Goal**: Solidify our learnings and provide clear instructions for future use.
+    -   **Action**: Create a root-level `README.md` to serve as a user-facing manual, detailing standard training and evaluation commands. This includes specifying which evaluation script (`evaluate.py` vs. `evaluate_bc.py`) to use for which model type.
+    -   **Action**: Update the Memory Bank (`activeContext.md`, `progress.md`, `systemPatterns.md`) to reflect the complete diagnostic journey and establish new patterns for reward design and evaluation.
 
-2.  **Analyze Environment & Policy Interaction**:
-    -   **Goal**: If the MRE confirms the bug, we must investigate *why* the information is being ignored.
-    -   **Next Steps**: This will involve a deep dive into the `NeedleReach-v0` environment's `_get_obs()` method and the Stable-Baselines3 `MultiInputPolicy` source code to understand how the `Dict` data is passed, processed, and fed into the neural network.
-
-This structured diagnostic process is the highest priority.
+2.  **Next Step: DAPG Training**:
+    -   The next major technical task is to create and run the training script for DAPG (`scripts/train_dapg.py`).
+    -   This will leverage our pre-trained BC policy and the sparse reward function in the environment, following the established workflow.
