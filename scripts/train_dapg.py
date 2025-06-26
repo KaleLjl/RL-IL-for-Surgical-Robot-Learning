@@ -5,7 +5,6 @@ import gymnasium as gym
 import numpy as np
 import torch
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.policies import ActorCriticPolicy as MlpPolicy
 from imitation.data import types
 from imitation.util import logger as imitation_logger
@@ -38,6 +37,7 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir):
     all_obs, all_next_obs, all_acts, all_dones = [], [], [], []
     for traj in trajectories:
         obs_soa = traj["obs"]
+        # The last observation has no corresponding action, so we ignore it.
         num_transitions = len(traj["acts"])
 
         # Flatten each observation dictionary into a single numpy array
@@ -49,8 +49,7 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir):
             ])
             all_obs.append(flat_obs)
             
-            # We need next_obs and dones for the Transitions object, even if
-            # the BC loss part of DAPG doesn't use them directly.
+            # We need next_obs and dones for the Transitions object.
             flat_next_obs = np.concatenate([
                 obs_soa['observation'][i+1],
                 obs_soa['achieved_goal'][i+1],
@@ -59,6 +58,7 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir):
             all_next_obs.append(flat_next_obs)
 
         all_acts.extend(traj["acts"])
+        # Create a dones array that is True only at the very end of the trajectory.
         dones = [False] * (num_transitions - 1) + [True]
         all_dones.extend(dones)
 
@@ -74,12 +74,14 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir):
 
     # --- 2. Setup Vectorized and Flattened Environment ---
     print(f"Initializing environment: {env_name}")
-    # Use make_vec_env to create a vectorized environment and apply our custom wrapper.
-    # This is the modern and correct way to handle environment wrapping.
+    # Per reward-system-guidelines.md, DAPG should use a sparse reward.
+    # The default is sparse, so we don't need to set any env_kwargs.
+    # Enable GUI rendering for debugging.
     venv = make_vec_env(
         env_name,
         n_envs=1,
         wrapper_class=FlattenDictObsWrapper,
+        env_kwargs={'render_mode': 'human'}
     )
     print("Environment created and wrapped with FlattenDictObsWrapper.")
 
@@ -112,15 +114,13 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir):
 
     # --- 5. Train the Agent ---
     print("Starting training...")
-    # Note: Currently, this will only perform standard PPO training as the
-    # BC loss logic is not yet implemented in PPOWithBCLoss.train().
-    model.learn(total_timesteps=100_000)
+    model.learn(total_timesteps=300_000)
     print("Training complete.")
 
-    # --- 6. Save the Policy ---
+    # --- 6. Save the Model ---
     os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
-    model.policy.save(model_save_path)
-    print(f"Trained policy saved to: {model_save_path}")
+    model.save(model_save_path)
+    print(f"Trained model saved to: {model_save_path}")
 
     venv.close()
 
@@ -132,6 +132,7 @@ if __name__ == "__main__":
     experiment_name = f"dapg_needle_reach_{int(time.time())}"
     log_dir = os.path.join("logs", experiment_name)
     model_dir = "models"
+    
     # Save model in the models/ dir
     model_save_path = os.path.join(model_dir, f"{experiment_name}.zip")
 

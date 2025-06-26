@@ -209,3 +209,60 @@ Just as training scripts are specialized, evaluation scripts must also be tailor
     -   **`evaluate_bc.py`**: This script is specifically for evaluating policies trained via pure Behavioral Cloning (`bc.BC` from the `imitation` library). It handles the specific way BC policies are saved and loaded.
         -   **Use Case**: For models trained with `train_bc.py`.
 -   **Pattern**: When evaluating a model, always select the corresponding evaluation script to ensure compatibility and prevent loading errors. This separation avoids making one script overly complex with conditional logic and ensures that each evaluation process is clean and correct for the model type.
+
+## 9. Custom Joint-Loss Training (`PPOWithBCLoss`)
+During the implementation of the DAPG stage, it was discovered that the `imitation` library's `DAPG` trainer was not a direct fit for our workflow, which is based on fine-tuning from a static, pre-collected dataset. The library's `DAggerTrainer` is designed for interactive, online data collection.
+
+To resolve this, we established a pattern of creating a custom joint-loss algorithm by subclassing a standard SB3 algorithm and injecting the imitation loss directly into its training loop.
+
+-   **Problem**: How to apply a Behavioral Cloning loss to a PPO agent when the standard library tools don't fit the use case?
+-   **Solution**: Create a custom class `PPOWithBCLoss` that inherits from `stable_baselines3.PPO` and overrides the `train()` method.
+
+### Implementation Pattern:
+The core of this pattern is to replicate the original algorithm's training loop and insert the additional loss term just before the optimization step.
+
+1.  **Inherit from the Base Algorithm**:
+    ```python
+    class PPOWithBCLoss(PPO):
+        # ... __init__ takes expert data ...
+    ```
+2.  **Override the `train` Method**:
+    -   The custom `train` method's structure should closely follow the original `PPO.train()` method.
+    -   It iterates through epochs and batches of rollout data collected from the environment.
+3.  **Calculate Standard Losses**:
+    -   For each batch, calculate the standard PPO losses: `policy_loss`, `value_loss`, and `entropy_loss`.
+4.  **Calculate Imitation Loss**:
+    -   Sample a batch of data from the expert demonstrations.
+    -   Calculate the `bc_loss` (negative log-likelihood of the expert actions under the current policy).
+5.  **Combine and Optimize**:
+    -   Combine all losses into a single `total_loss` tensor, applying a weight to the `bc_loss`.
+    -   Perform a **single** `optimizer.step()` on this combined loss.
+
+    ```python
+    # Inside the training loop of the overridden train() method
+    
+    # --- Standard PPO losses are calculated first ---
+    policy_loss = ...
+    value_loss = ...
+    entropy_loss = ...
+
+    # --- Then, the BC loss is calculated ---
+    expert_obs, expert_acts = self._sample_expert_batch()
+    _, expert_log_prob, _ = self.policy.evaluate_actions(expert_obs, expert_acts)
+    bc_loss = -th.mean(expert_log_prob)
+
+    # --- Finally, they are combined before the backward pass ---
+    total_loss = (
+        policy_loss
+        + self.ent_coef * entropy_loss
+        + self.vf_coef * value_loss
+        + self.bc_loss_weight * bc_loss
+    )
+
+    # --- A single optimization step is performed ---
+    self.policy.optimizer.zero_grad()
+    total_loss.backward()
+    self.policy.optimizer.step()
+    ```
+
+-   **Pattern**: This approach provides full control over the training process and allows for the flexible combination of different loss signals (reinforcement and imitation), making it a powerful pattern for implementing custom policy-gradient algorithms. It also correctly resolves schedule-based parameters like `clip_range` by calling them with the `_current_progress_remaining` attribute within the training loop.

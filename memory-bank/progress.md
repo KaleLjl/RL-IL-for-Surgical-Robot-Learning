@@ -23,9 +23,14 @@
     - **Open Question**: The necessity of the `FlattenDictObsWrapper` is now unconfirmed, as the primary issue was the reward signal. This is noted for potential future simplification.
 
 ## 5. ML Validation Phase 3: Demonstration-Augmented Policy Gradient (DAPG)
+- **Status**: **Complete.**
+- **Outcome**: Successfully trained a DAPG agent for the `NeedleReach-v0` task, achieving a **100% success rate**. This validates the entire standardized workflow (BC -> DAPG) and our custom `PPOWithBCLoss` algorithm.
+- **Evolution of the DAPG Performance**:
+    - **Initial State**: The first DAPG model, trained for 100,000 timesteps, yielded a low success rate of 20%. This confirmed the algorithm was learning but was insufficient.
+    - **Investigation**: We hypothesized that the agent was simply undertrained. The most direct way to test this was to significantly increase the training duration.
+    - **Resolution**: The training duration was increased from 100,000 to **300,000 timesteps**.
+    - **Final Result**: The new model, when evaluated, achieved a **100% success rate**, confirming that training duration was the primary limiting factor.
+
+## 6. Next Steps: Generalization to New Tasks
 - **Status**: **Pending.**
-- **Next Steps**:
-    1.  Create and/or verify the `train_dapg.py` script.
-    2.  This script will use the successful BC model as a pre-trained starting point.
-    3.  Crucially, it will use the environment's **sparse reward** function, which is appropriate for this algorithm, as per our established `reward-system-guidelines`.
-    4.  Document the entire workflow in a user-facing `README.md`.
+- **Next Step**: Replicate the successful `NeedleReach-v0` workflow (Data Generation -> BC Training -> DAPG Fine-tuning) on a new surgical task to prove the generality of our framework.

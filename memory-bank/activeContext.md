@@ -1,26 +1,36 @@
-# Active Context
+# Active Context: Project Roadmap and Strategic Focus
 
-## 1. Current Focus: Transitioning to DAPG
-Our primary focus has shifted from debugging the pure RL agent to preparing for the next stage of the project: training a Demonstration-Augmented Policy Gradient (DAPG) agent. This follows the successful resolution of the PPO training bug.
+## 1. Current Focus: Implement `PegTransfer` Task
+Our primary focus is to replicate our successful training workflow on a more complex task to prove its generality. Based on a thorough analysis of the original SurRoL codebase, we have established a clear task hierarchy and made a strategic decision on the next step.
 
-### Summary of PPO Bug Resolution
-- **Initial Problem**: The PPO agent, regardless of policy (`MultiInputPolicy` or `MlpPolicy`), failed to learn a meaningful strategy, resulting in a 0% success rate during evaluation.
-- **Diagnostic Journey**:
-    1.  Our initial hypothesis was a bug in Stable-Baselines3's `MultiInputPolicy` when handling `Dict` observation spaces. This led us to implement a **"Flattening Fallback"** using a `FlattenDictObsWrapper` and `MlpPolicy`.
-    2.  When the flattened approach also failed, we discovered the true root cause: the **sparse reward function** was insufficient for a pure RL agent to learn effectively from scratch.
-    3.  The final, successful solution involved implementing a **switchable reward system** in the environment. We trained the PPO agent using a **dense reward** (`reward = -distance`) combined with the **flattened observation space**. This produced a successful model with an 80% success rate.
-- **Key Learnings**:
-    -   The primary blocker for pure RL was the sparse reward signal.
-    -   The necessity of the `FlattenDictObsWrapper` is now **unconfirmed**. While it was kept as a safety measure, it's possible that `MultiInputPolicy` could work correctly with a dense reward. This can be revisited later if needed.
+## 2. Surgical Task Hierarchy
 
-## 2. Immediate Actions: Preparing for DAPG
-With a functional pure RL training pipeline, we now proceed to the next logical step in our development workflow.
+We have categorized the available PSM-based tasks into three distinct difficulty tiers:
 
-1.  **Documentation**:
-    -   **Goal**: Solidify our learnings and provide clear instructions for future use.
-    -   **Action**: Create a root-level `README.md` to serve as a user-facing manual, detailing standard training and evaluation commands. This includes specifying which evaluation script (`evaluate.py` vs. `evaluate_bc.py`) to use for which model type.
-    -   **Action**: Update the Memory Bank (`activeContext.md`, `progress.md`, `systemPatterns.md`) to reflect the complete diagnostic journey and establish new patterns for reward design and evaluation.
+### Tier 1: Basic Reaching (Completed)
+-   **Task**: `NeedleReach`
+-   **Core Skill**: 3D space navigation.
+-   **Status**: **100% Complete**. This validated our baseline environment and learning workflow.
 
-2.  **Next Step: DAPG Training**:
-    -   The next major technical task is to create and run the training script for DAPG (`scripts/train_dapg.py`).
-    -   This will leverage our pre-trained BC policy and the sparse reward function in the environment, following the established workflow.
+### Tier 2: Single-Arm Pick-and-Place (Next Target)
+These tasks introduce object interaction and require a more sophisticated, waypoint-based expert policy.
+-   `NeedlePick`: Basic grasp and lift.
+-   `GauzeRetrieve`: Grasp, lift, and move.
+-   `PegTransfer`: Grasp, lift, move, and high-precision placement.
+
+### Tier 3: Bimanual Coordination (Future Scope)
+This is the most complex tier, requiring significant framework extensions to support dual-arm control.
+-   `BiPegTransfer`: Involves two arms and object hand-offs.
+-   **Status**: **Out of scope for now**. To be considered only if time permits after mastering Tier 2.
+
+## 3. Strategic Decision: Tackle `PegTransfer` Next
+
+After careful consideration, we have decided to **bypass the simpler Tier 2 tasks and directly target `PegTransfer`**.
+
+-   **Rationale**: The expert policies for all Tier 2 tasks are based on the same waypoint controller logic. `PegTransfer` uses the most complete, 6-stage version of this logic. By solving for `PegTransfer`, we effectively solve the core technical challenges of `NeedlePick` and `GauzeRetrieve` simultaneously. This "high-risk, high-reward" approach is the most efficient path to validating our framework's capability for complex manipulation.
+
+## 4. Immediate Actions
+The next concrete step is to begin the implementation of the `PegTransfer` environment.
+1.  Create the new environment file: `src/dvrk_gym/envs/peg_transfer.py`.
+2.  Implement the environment logic, referencing `archive/SurRoL/surrol/tasks/peg_transfer.py`.
+3.  Adapt `scripts/generate_expert_data.py` to include a `peg-transfer` mode with the 6-waypoint expert policy.

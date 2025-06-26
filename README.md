@@ -16,10 +16,20 @@ The project follows a standardized, multi-stage workflow for developing policies
     - `docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_bc.py`
 3.  **Train RL Policy**: Train a pure RL agent from scratch.
     - `docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_rl.py`
-4.  **Train DAPG Policy (Future Work)**: Fine-tune the BC policy using RL.
+4.  **Train DAPG Policy**: Fine-tune the BC policy using RL.
     - `docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_dapg.py`
 
-## 3. How to Evaluate Models
+## 3. How to Monitor Training (TensorBoard)
+
+To visualize training progress, including rewards, loss functions, and other metrics, run TensorBoard in a separate terminal.
+
+**Command:**
+```bash
+docker compose -f docker/docker-compose.yml exec dvrk-dev tensorboard --logdir logs
+```
+This will start a web server (usually on `http://localhost:6006`) that you can open in your browser to view the live training curves.
+
+## 4. How to Evaluate Models
 
 Different models must be evaluated with their corresponding specialized scripts.
 
