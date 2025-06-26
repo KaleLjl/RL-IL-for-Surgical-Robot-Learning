@@ -14,6 +14,8 @@ This file documents the standard workflow and commands for interacting with the 
 - The primary workflow is to execute scripts inside the container directly from the host's terminal, without entering the container's shell.
 - **Example (running a training script):**
   - `docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_bc.py`
+- **Example (running a tensorboard)**
+ - `docker compose -f docker/docker-compose.yml exec dvrk-dev tensorboard --logdir logs`
 
 ## GUI Forwarding (X11)
 - To enable GUI applications from the container to display on the host, the following setup is required:

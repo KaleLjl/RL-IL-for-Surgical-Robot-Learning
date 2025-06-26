@@ -1,4 +1,4 @@
-# Product Context: Advancing Surgical Robotics with AI
+·# Product Context: Advancing Surgical Robotics with AI
 
 ## Problem Statement
 
