@@ -138,6 +138,87 @@ pip3 install -e .
 - Contact detection and grasping logic in individual task files
 - URDF loading and asset paths in `assets/` directory
 
+## PegTransfer Debugging Guide
+
+### Critical Issues and Solutions When Mimicking SurROL
+
+#### 1. TIP-EEF Offset Problem
+**Issue**: Robot reaches waypoints but never activates grasping (activated=-1)
+
+**Root Cause**: TIP is 5.1cm below EEF, but waypoints calculated for EEF position
+
+**Detection**: 
+- TIP-object distance stays >1cm (activation threshold)
+- Robot appears to "grasp air" above objects
+
+**Solution**: Subtract TIP-EEF offset from grasp waypoint heights:
+```python
+# In _define_waypoints()
+grasp_height = pos_obj[2] + (0.003 + 0.0102) * self.SCALING - 0.051 - 0.013
+```
+
+#### 2. Activation vs Constraint Creation
+**Issue**: Robot activates (activated=0) but doesn't physically grasp objects
+
+**Root Cause**: `_meet_contact_constraint_requirement()` requires object height > goal+5cm
+
+**Detection**:
+- activated=0 but constraint=False
+- Object height never changes during "grasping"
+
+**Solution**: Create constraint immediately upon activation:
+```python
+def _meet_contact_constraint_requirement(self) -> bool:
+    return self._activated >= 0  # Create constraint as soon as activated
+```
+
+#### 3. Contact Detection Settings
+**Critical Settings for PegTransfer**:
+```python
+self._contact_approx = True   # Use distance-based activation (threshold: 1cm)
+self._waypoint_goal = True    # PegTransfer has waypoint goals
+```
+
+#### 4. Precision Analysis Workflow
+1. **Use debug scripts to measure exact distances**:
+   - `debug_precision.py` - Analyze waypoint reaching precision
+   - `debug_near_miss.py` - Find closest approach distance and offset vectors
+   - `debug_activation.py` - Monitor activation thresholds
+   - `debug_constraint.py` - Track constraint creation during grasping
+
+2. **Key Measurements**:
+   - TIP-to-object distance during grasping attempts
+   - EEF position vs waypoint position accuracy
+   - Activation threshold: `2e-3 * SCALING` (1cm for SCALING=5)
+
+#### 5. Coordinate System Verification
+- `pose_rcm2world()` returns EEF position, not TIP
+- Observations use EEF coordinates (`obs['observation'][:3]`)
+- Activation detection uses TIP coordinates
+- This mismatch requires height compensation in waypoint calculations
+
+#### 6. Debug Script Usage Pattern
+```bash
+# Step-by-step debugging approach:
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/debug_precision.py
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/debug_near_miss.py  
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/debug_activation.py
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/debug_constraint.py
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/debug_full_workflow.py
+```
+
+#### 7. Success Indicators
+- **Activation Success**: activated=0, TIP-object distance <1cm
+- **Constraint Success**: constraint=True, object height increases
+- **Task Success**: terminated=True, object-goal distance <3cm  
+- **Precision Target**: TIP-object distance <0.5mm during grasping
+
+#### 8. Common Failure Patterns
+- **"Grasping air"**: TIP-EEF offset not compensated in waypoints
+- **"Touches but doesn't grab"**: Constraint creation conditions too strict
+- **"Robot stuck in air"**: Workspace limits preventing downward movement
+- **"Never activates"**: contact_approx=False requires physical contact vs distance-based
+
 ## Testing and Validation
 - Use scripts in `scripts/debug_*.py` for specific debugging
 - `scripts/comprehensive_test.py` for full environment validation
