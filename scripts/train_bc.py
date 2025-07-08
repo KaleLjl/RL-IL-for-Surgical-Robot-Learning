@@ -2,6 +2,7 @@ import os
 import pickle
 import gymnasium as gym
 import numpy as np
+import argparse
 from imitation.algorithms import bc
 from imitation.data import rollout, types
 from imitation.util import logger as imitation_logger
@@ -133,19 +134,37 @@ def train_bc_agent(env_name, expert_data_path, model_save_path, log_dir):
     venv.close()
 
 if __name__ == "__main__":
-    ENV_NAME = "NeedleReach-v0"
-    EXPERT_DATA_PATH = os.path.join("data", "expert_data_needle_reach.pkl")
-
+    # --- Command Line Arguments ---
+    parser = argparse.ArgumentParser(description="Train BC agent on dVRK environments")
+    parser.add_argument("--env", default="NeedleReach-v0",
+                       choices=["NeedleReach-v0", "PegTransfer-v0"],
+                       help="Environment name to train on")
+    parser.add_argument("--expert-data", 
+                       help="Path to expert data file (auto-detected if not provided)")
+    
+    args = parser.parse_args()
+    
+    # Auto-detect expert data path if not provided
+    if args.expert_data is None:
+        if args.env == "NeedleReach-v0":
+            args.expert_data = os.path.join("data", "expert_data_needle_reach.pkl")
+        elif args.env == "PegTransfer-v0":
+            args.expert_data = os.path.join("data", "expert_data_peg_transfer.pkl")
+    
     # Create a unique directory for this experiment
-    experiment_name = f"bc_needle_reach_{int(time.time())}"
+    env_suffix = args.env.lower().replace("-v0", "").replace("reach", "_reach").replace("transfer", "_transfer")
+    experiment_name = f"bc_{env_suffix}_{int(time.time())}"
     log_dir = os.path.join("logs", experiment_name)
     model_dir = "models"
     # Save model in the models/ dir
     model_save_path = os.path.join(model_dir, f"{experiment_name}.zip")
+    
+    print(f"Training BC on {args.env}")
+    print(f"Expert data: {args.expert_data}")
 
     train_bc_agent(
-        env_name=ENV_NAME,
-        expert_data_path=EXPERT_DATA_PATH,
+        env_name=args.env,
+        expert_data_path=args.expert_data,
         model_save_path=model_save_path,
         log_dir=log_dir,
     )

@@ -121,6 +121,7 @@ if __name__ == "__main__":
         "--env-name",
         type=str,
         default="NeedleReach-v0",
+        choices=["NeedleReach-v0", "PegTransfer-v0"],
         help="The Gymnasium environment name to run the evaluation on."
     )
     parser.add_argument(

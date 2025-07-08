@@ -2,13 +2,9 @@ import gymnasium as gym
 import numpy as np
 from stable_baselines3.common.policies import ActorCriticPolicy
 import pathlib
+import argparse
 
 import dvrk_gym
-
-# --- Parameters ---
-ENV_NAME = "NeedleReach-v0"
-MODEL_PATH = "models/bc_needle_reach.zip"
-NUM_EPISODES = 100
 
 def flatten_obs(obs):
     """
@@ -25,19 +21,34 @@ def main():
     """
     Evaluates a trained Behavioral Cloning model.
     """
-    print(f"Loading environment: {ENV_NAME}")
-    env = gym.make(ENV_NAME, render_mode="human")
+    # --- Command Line Arguments ---
+    parser = argparse.ArgumentParser(description="Evaluate a trained BC model")
+    parser.add_argument("--model-path", required=True,
+                       help="Path to the trained BC model (.zip file)")
+    parser.add_argument("--env", default="NeedleReach-v0",
+                       choices=["NeedleReach-v0", "PegTransfer-v0"],
+                       help="Environment name to evaluate on")
+    parser.add_argument("--episodes", type=int, default=100,
+                       help="Number of episodes to evaluate")
+    parser.add_argument("--no-render", action="store_true",
+                       help="Disable rendering for faster evaluation")
+    
+    args = parser.parse_args()
+    
+    print(f"Loading environment: {args.env}")
+    render_mode = None if args.no_render else "human"
+    env = gym.make(args.env, render_mode=render_mode)
 
-    print(f"Loading model from: {MODEL_PATH}")
+    print(f"Loading model from: {args.model_path}")
     # The policy was saved as a standard SB3 ActorCriticPolicy,
     # so we should load it using the same class.
     # The `imitation.reconstruct_policy` has different expectations.
-    policy = ActorCriticPolicy.load(MODEL_PATH)
+    policy = ActorCriticPolicy.load(args.model_path)
 
     successes = 0
     total_rewards = 0
 
-    for episode in range(NUM_EPISODES):
+    for episode in range(args.episodes):
         obs, info = env.reset()
         terminated = False
         truncated = False
@@ -51,22 +62,23 @@ def main():
             
             obs, reward, terminated, truncated, info = env.step(action)
             
-            env.render()
+            if not args.no_render:
+                env.render()
             episode_reward += reward
 
         if info.get('is_success', False):
             successes += 1
         
         total_rewards += episode_reward
-        print(f"Episode {episode + 1}/{NUM_EPISODES} - Reward: {episode_reward:.2f} - Success: {info.get('is_success', False)}")
+        print(f"Episode {episode + 1}/{args.episodes} - Reward: {episode_reward:.2f} - Success: {info.get('is_success', False)}")
 
     env.close()
 
-    success_rate = (successes / NUM_EPISODES) * 100
-    avg_reward = total_rewards / NUM_EPISODES
+    success_rate = (successes / args.episodes) * 100
+    avg_reward = total_rewards / args.episodes
 
     print("\n--- Evaluation Summary ---")
-    print(f"Total Episodes: {NUM_EPISODES}")
+    print(f"Total Episodes: {args.episodes}")
     print(f"Successes: {successes}")
     print(f"Success Rate: {success_rate:.2f}%")
     print(f"Average Reward: {avg_reward:.2f}")

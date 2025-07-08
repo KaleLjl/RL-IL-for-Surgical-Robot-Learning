@@ -4,6 +4,7 @@ import time
 import gymnasium as gym
 import numpy as np
 import torch
+import argparse
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.policies import ActorCriticPolicy as MlpPolicy
 from imitation.data import types
@@ -15,7 +16,7 @@ from dvrk_gym.algorithms.ppo_bc import PPOWithBCLoss
 from dvrk_gym.utils.wrappers import FlattenDictObsWrapper
 import dvrk_gym  # Import to register the environment
 
-def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir):
+def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir, timesteps=300000, bc_weight=0.05):
     """
     Trains an agent using our custom PPOWithBCLoss algorithm, which
     forms the basis of our DAPG implementation.
@@ -25,6 +26,8 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir):
         expert_data_path (str): Path to the expert demonstration data (.pkl file).
         model_save_path (str): Path to save the trained policy model.
         log_dir (str): Directory to save training logs.
+        timesteps (int): Total training timesteps.
+        bc_weight (float): BC loss weight.
     """
     print("--- Custom DAPG Training ---")
     
@@ -97,7 +100,7 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir):
         policy=MlpPolicy,
         env=venv,
         expert_demonstrations=expert_demonstrations,
-        bc_loss_weight=0.05,
+        bc_loss_weight=bc_weight,
         bc_batch_size=256,
         tensorboard_log=log_dir,
         learning_rate=3e-4,
@@ -114,7 +117,7 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir):
 
     # --- 5. Train the Agent ---
     print("Starting training...")
-    model.learn(total_timesteps=300_000)
+    model.learn(total_timesteps=timesteps)
     print("Training complete.")
 
     # --- 6. Save the Model ---
@@ -125,11 +128,50 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir):
     venv.close()
 
 if __name__ == "__main__":
-    ENV_NAME = "NeedleReach-v0"
-    EXPERT_DATA_PATH = os.path.join("data", "expert_data_needle_reach.pkl")
-
+    # --- Command Line Arguments ---
+    parser = argparse.ArgumentParser(description="Train DAPG agent on dVRK environments")
+    parser.add_argument("--env", default="NeedleReach-v0",
+                       choices=["NeedleReach-v0", "PegTransfer-v0"],
+                       help="Environment name to train on")
+    parser.add_argument("--expert-data", 
+                       help="Path to expert data file (auto-detected if not provided)")
+    parser.add_argument("--timesteps", type=int,
+                       help="Total training timesteps (auto-selected if not provided)")
+    parser.add_argument("--bc-weight", type=float,
+                       help="BC loss weight (auto-selected if not provided)")
+    
+    args = parser.parse_args()
+    
+    # Environment-specific optimal parameters for DAPG
+    if args.env == "NeedleReach-v0":
+        defaults = {
+            "timesteps": 300000,
+            "bc_weight": 0.05,
+        }
+    elif args.env == "PegTransfer-v0":
+        defaults = {
+            "timesteps": 500000,
+            "bc_weight": 0.1,  # Higher BC weight for complex task
+        }
+    
+    # Use provided arguments or fall back to environment defaults
+    timesteps = args.timesteps or defaults["timesteps"]
+    bc_weight = args.bc_weight or defaults["bc_weight"]
+    
+    print(f"Training DAPG on {args.env} with optimized parameters:")
+    print(f"  Timesteps: {timesteps}")
+    print(f"  BC weight: {bc_weight}")
+    
+    # Auto-detect expert data path if not provided
+    if args.expert_data is None:
+        if args.env == "NeedleReach-v0":
+            args.expert_data = os.path.join("data", "expert_data_needle_reach.pkl")
+        elif args.env == "PegTransfer-v0":
+            args.expert_data = os.path.join("data", "expert_data_peg_transfer.pkl")
+    
     # Create a unique directory for this experiment
-    experiment_name = f"dapg_needle_reach_{int(time.time())}"
+    env_suffix = args.env.lower().replace("-v0", "").replace("reach", "_reach").replace("transfer", "_transfer")
+    experiment_name = f"dapg_{env_suffix}_{int(time.time())}"
     log_dir = os.path.join("logs", experiment_name)
     model_dir = "models"
     
@@ -137,8 +179,10 @@ if __name__ == "__main__":
     model_save_path = os.path.join(model_dir, f"{experiment_name}.zip")
 
     train_dapg_agent(
-        env_name=ENV_NAME,
-        expert_data_path=EXPERT_DATA_PATH,
+        env_name=args.env,
+        expert_data_path=args.expert_data,
         model_save_path=model_save_path,
         log_dir=log_dir,
+        timesteps=timesteps,
+        bc_weight=bc_weight,
     )
