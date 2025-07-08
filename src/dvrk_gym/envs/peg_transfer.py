@@ -466,10 +466,74 @@ class PegTransferEnv(DVRKEnv):
 
     def _get_dense_reward(self, obs: dict) -> float:
         """
-        Dense reward based on distance to goal.
+        Multi-stage dense reward function specifically designed for PegTransfer task.
+        Provides guidance for: approach -> grasp -> lift -> transport -> place
         """
-        dist = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
-        return -dist
+        # Extract key components from observation
+        obj_pos = obs['achieved_goal']  # Object (block) position
+        goal_pos = obs['desired_goal']  # Target peg position
+        eef_pos = obs['observation'][:3]  # End-effector position
+        jaw_angle = obs['observation'][6]  # Gripper state (negative = closed)
+        
+        # Distance calculations
+        eef_to_obj_dist = np.linalg.norm(eef_pos - obj_pos)
+        obj_to_goal_dist = np.linalg.norm(obj_pos - goal_pos)
+        
+        # Scale distances to get reasonable reward magnitudes
+        eef_to_obj_dist_scaled = eef_to_obj_dist / self.SCALING
+        obj_to_goal_dist_scaled = obj_to_goal_dist / self.SCALING
+        
+        # Check if object is grasped (activated >= 0 means grasping attempt)
+        is_grasped = self._activated >= 0 and self._contact_constraint is not None
+        
+        # Stage 1: Approach Phase (when object not grasped)
+        if not is_grasped:
+            # Primary reward: get close to the object
+            approach_reward = -eef_to_obj_dist_scaled * 2.0
+            
+            # Bonus for being very close to object (within 1cm)
+            if eef_to_obj_dist < 0.01 * self.SCALING:
+                approach_reward += 1.0
+                
+            # Small bonus for closing gripper near object (encourages grasping attempts)
+            if jaw_angle < 0 and eef_to_obj_dist < 0.02 * self.SCALING:
+                approach_reward += 0.5
+                
+            return approach_reward
+        
+        # Stage 2: Manipulation Phase (when object is grasped)
+        else:
+            # Base reward for maintaining grasp
+            grasp_reward = 3.0
+            
+            # Primary reward: move object toward goal
+            transport_reward = -obj_to_goal_dist_scaled * 3.0
+            
+            # Height reward: encourage lifting object above table
+            table_height = self.goal[2] - 0.02 * self.SCALING  # Slightly below goal
+            if obj_pos[2] > table_height:
+                height_reward = 1.0
+            else:
+                height_reward = -0.5  # Penalty for dragging on table
+            
+            # Bonus for being close to goal
+            if obj_to_goal_dist < 0.02 * self.SCALING:  # Within 2cm
+                proximity_bonus = 2.0
+            elif obj_to_goal_dist < 0.05 * self.SCALING:  # Within 5cm
+                proximity_bonus = 1.0
+            else:
+                proximity_bonus = 0.0
+            
+            # Final placement bonus
+            if self._is_success(obs):
+                success_bonus = 10.0
+            else:
+                success_bonus = 0.0
+            
+            total_reward = (grasp_reward + transport_reward + height_reward + 
+                          proximity_bonus + success_bonus)
+            
+            return total_reward
 
     def _get_obs_robot_state(self):
         """
