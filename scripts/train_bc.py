@@ -108,11 +108,11 @@ def train_bc_agent(env_name, expert_data_path, model_save_path, log_dir):
 
     # Environment-specific hyperparameters
     if env_name == "PegTransfer-v0":
-        # PegTransfer: Better generalization with fine-tuned parameters
-        learning_rate = 3e-5  # Lower LR for more stable learning
-        net_arch = [256, 128, 64]  # Deeper but narrower network for better feature extraction
-        n_epochs = 35  # Slightly more epochs for better convergence
-        weight_decay = 5e-4  # Moderate L2 regularization (balanced)
+        # PegTransfer: Aggressive overfitting prevention
+        learning_rate = 5e-5  # Slightly higher for faster convergence
+        net_arch = [128, 128]  # Keep smaller network
+        n_epochs = 25  # Much fewer epochs! Stop before overfitting
+        weight_decay = 1e-3  # Stronger L2 regularization (10x stronger)
     elif env_name == "NeedleReach-v0":
         # NeedleReach: Simpler task, can handle higher LR
         learning_rate = 1e-4
@@ -143,7 +143,7 @@ def train_bc_agent(env_name, expert_data_path, model_save_path, log_dir):
         demonstrations=transitions,
         policy=policy,
         rng=np.random.default_rng(),
-        batch_size=128,  # Larger batch size for more stable gradients
+        batch_size=64,  # Slightly larger batch size for stability
     )
     print("BC trainer configured.")
 
