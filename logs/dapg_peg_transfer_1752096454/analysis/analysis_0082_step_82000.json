@@ -1,0 +1,60 @@
+{
+  "timestamp": "2025-07-09T22:26:47.107230",
+  "analysis_id": 82,
+  "timestep": 82000,
+  "elapsed_time": 3552.1824383735657,
+  "algorithm": "dapg",
+  "metrics": {
+    "episode_reward": {
+      "mean": -143.02,
+      "std": 22.90064627909003,
+      "min": -150.0,
+      "max": -34.0,
+      "count": 100
+    },
+    "episode_length": {
+      "mean": 143.11,
+      "std": 22.623392760591855,
+      "min": 35,
+      "max": 150
+    },
+    "success_rate": {
+      "rate": 0.09,
+      "count": 100
+    },
+    "policy_loss": {
+      "mean": 0.03873836249113083,
+      "std": 0.0,
+      "trend": "stable"
+    },
+    "value_loss": {
+      "mean": 11.233400344848633,
+      "std": 0.0,
+      "trend": "stable"
+    },
+    "bc_loss": {
+      "mean": -4.321069858965602,
+      "std": 0.0,
+      "trend": "stable"
+    }
+  },
+  "health_check": {
+    "status": "needs_attention",
+    "issues": [
+      {
+        "type": "high_value_loss",
+        "severity": "warning",
+        "message": "Value function loss is high - may need more training data"
+      }
+    ]
+  },
+  "recommendations": [
+    {
+      "type": "bc_weight",
+      "action": "decrease",
+      "reason": "BC loss low but poor performance - reduce BC weight",
+      "priority": "high"
+    }
+  ],
+  "warnings": []
+}

@@ -4,7 +4,7 @@ import gymnasium as gym
 import numpy as np
 import dvrk_gym  # Import to register the environment
 
-def generate_expert_data_peg_transfer(num_episodes=30, data_path="data/expert_data_peg_transfer.pkl"):
+def generate_expert_data_peg_transfer(num_episodes=100, data_path="data/expert_data_peg_transfer.pkl"):
     """
     Generates expert demonstration data for PegTransfer task and saves it as a list of trajectories.
 
@@ -83,4 +83,4 @@ def generate_expert_data_peg_transfer(num_episodes=30, data_path="data/expert_da
     env.close()
 
 if __name__ == "__main__":
-    generate_expert_data_peg_transfer(num_episodes=30, data_path="data/expert_data_peg_transfer.pkl")
+    generate_expert_data_peg_transfer(num_episodes=1000, data_path="data/expert_data_peg_transfer.pkl")

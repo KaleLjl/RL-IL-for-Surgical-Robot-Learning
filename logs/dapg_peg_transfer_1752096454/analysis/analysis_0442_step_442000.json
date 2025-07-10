@@ -1,0 +1,60 @@
+{
+  "timestamp": "2025-07-10T02:36:51.164780",
+  "analysis_id": 442,
+  "timestep": 442000,
+  "elapsed_time": 18556.239988088608,
+  "algorithm": "dapg",
+  "metrics": {
+    "episode_reward": {
+      "mean": -135.45,
+      "std": 33.544112747246714,
+      "min": -150.0,
+      "max": -34.0,
+      "count": 100
+    },
+    "episode_length": {
+      "mean": 135.62,
+      "std": 33.18426735668576,
+      "min": 35,
+      "max": 150
+    },
+    "success_rate": {
+      "rate": 0.17,
+      "count": 100
+    },
+    "policy_loss": {
+      "mean": 0.092130646109581,
+      "std": 0.0,
+      "trend": "stable"
+    },
+    "value_loss": {
+      "mean": 9.048797607421875,
+      "std": 0.0,
+      "trend": "stable"
+    },
+    "bc_loss": {
+      "mean": -4.197502136696084,
+      "std": 8.881784197001252e-16,
+      "trend": "stable"
+    }
+  },
+  "health_check": {
+    "status": "healthy",
+    "issues": []
+  },
+  "recommendations": [
+    {
+      "type": "batch_size",
+      "action": "increase",
+      "reason": "High reward variance - consider increasing batch size",
+      "priority": "medium"
+    },
+    {
+      "type": "bc_weight",
+      "action": "decrease",
+      "reason": "BC loss low but poor performance - reduce BC weight",
+      "priority": "high"
+    }
+  ],
+  "warnings": []
+}

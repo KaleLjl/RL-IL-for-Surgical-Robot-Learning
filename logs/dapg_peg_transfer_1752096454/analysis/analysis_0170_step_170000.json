@@ -1,0 +1,60 @@
+{
+  "timestamp": "2025-07-09T23:28:39.930064",
+  "analysis_id": 170,
+  "timestep": 170000,
+  "elapsed_time": 7265.005278587341,
+  "algorithm": "dapg",
+  "metrics": {
+    "episode_reward": {
+      "mean": -146.68,
+      "std": 17.163845722914196,
+      "min": -150.0,
+      "max": -45.0,
+      "count": 100
+    },
+    "episode_length": {
+      "mean": 146.72,
+      "std": 16.97826846294993,
+      "min": 46,
+      "max": 150
+    },
+    "success_rate": {
+      "rate": 0.04,
+      "count": 100
+    },
+    "policy_loss": {
+      "mean": 0.11918484039604664,
+      "std": 0.21881315226759895,
+      "trend": "increasing"
+    },
+    "value_loss": {
+      "mean": 3.077090892791748,
+      "std": 1.2543990855783116,
+      "trend": "decreasing"
+    },
+    "bc_loss": {
+      "mean": -4.519401215638398,
+      "std": 0.1584282750154422,
+      "trend": "decreasing"
+    }
+  },
+  "health_check": {
+    "status": "healthy",
+    "issues": []
+  },
+  "recommendations": [
+    {
+      "type": "learning_rate",
+      "action": "decrease",
+      "reason": "Policy loss is increasing - consider reducing learning rate",
+      "priority": "high"
+    },
+    {
+      "type": "bc_weight",
+      "action": "decrease",
+      "reason": "BC loss low but poor performance - reduce BC weight",
+      "priority": "high"
+    }
+  ],
+  "warnings": []
+}

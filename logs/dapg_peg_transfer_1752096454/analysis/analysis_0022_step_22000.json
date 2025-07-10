@@ -1,0 +1,54 @@
+{
+  "timestamp": "2025-07-09T21:43:33.131407",
+  "analysis_id": 22,
+  "timestep": 22000,
+  "elapsed_time": 958.2066173553467,
+  "algorithm": "dapg",
+  "metrics": {
+    "episode_reward": {
+      "mean": -146.66,
+      "std": 15.791276072566141,
+      "min": -150.0,
+      "max": -47.0,
+      "count": 100
+    },
+    "episode_length": {
+      "mean": 146.72,
+      "std": 15.592998428782069,
+      "min": 48,
+      "max": 150
+    },
+    "success_rate": {
+      "rate": 0.06,
+      "count": 100
+    },
+    "policy_loss": {
+      "mean": 0.08986552059650421,
+      "std": 0.0,
+      "trend": "stable"
+    },
+    "value_loss": {
+      "mean": 6.696713447570801,
+      "std": 0.0,
+      "trend": "stable"
+    },
+    "bc_loss": {
+      "mean": -4.818976939975099,
+      "std": 8.881784197001252e-16,
+      "trend": "stable"
+    }
+  },
+  "health_check": {
+    "status": "healthy",
+    "issues": []
+  },
+  "recommendations": [
+    {
+      "type": "bc_weight",
+      "action": "decrease",
+      "reason": "BC loss low but poor performance - reduce BC weight",
+      "priority": "high"
+    }
+  ],
+  "warnings": []
+}

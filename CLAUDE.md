@@ -62,8 +62,21 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev /bin/bash
 
 2. **Train Behavioral Cloning**:
    ```bash
-   docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_bc.py
+   # Train BC on PegTransfer (default expert data)
+   docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_bc.py --env PegTransfer-v0
+
+   # Train BC on NeedleReach (default expert data)
+   docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_bc.py --env NeedleReach-v0
+
+   # Train BC with a custom expert data file
+   docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_bc.py --env PegTransfer-v0 --expert-data data/my_expert_data.pkl
+
+   # View all available options
+   docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_bc.py --help
    ```
+   - The trained model will be saved in the `models/` directory with a unique timestamped filename (e.g., `models/bc_peg_transfer_XXXXXXXXXX.zip`).
+   - Training logs are saved in the `logs/` directory under a unique subfolder for each run.
+   - If `--expert-data` is not specified, the script will automatically use the default expert data file for the selected environment.
 
 3. **Train Pure RL (PPO)** - Uses **DENSE rewards** and environment-optimized parameters:
    ```bash
@@ -80,20 +93,31 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev /bin/bash
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_rl.py --env {NeedleReach-v0,PegTransfer-v0} [--timesteps N] [--checkpoint-freq N] [--learning-rate F] [--n-steps N] [--batch-size N]
    ```
 
-4. **Train DAPG (RL fine-tuning)** - Uses **SPARSE rewards** and environment-optimized parameters:
+4. **Train DAPG (RL fine-tuning)** - Uses **SPARSE rewards** and **BC model initialization**:
    ```bash
    # Auto-optimized for NeedleReach (300k timesteps, bc_weight=0.05, SPARSE rewards)
+   # Automatically detects and loads the latest BC model for initialization
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_dapg.py
    
    # Auto-optimized for PegTransfer (500k timesteps, bc_weight=0.1, SPARSE rewards for stronger BC guidance)
+   # Automatically detects and loads the latest BC model for initialization
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_dapg.py --env PegTransfer-v0
+   
+   # Manually specify BC model for initialization
+   docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_dapg.py --env PegTransfer-v0 --bc-model models/bc_peg_transfer_1234567890.zip
    
    # Override specific parameters (automatically gets SPARSE rewards)
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_dapg.py --env PegTransfer-v0 --bc-weight 0.15
    
    # All available options
-   docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_dapg.py --env {NeedleReach-v0,PegTransfer-v0} [--expert-data <path>] [--timesteps N] [--bc-weight F]
+   docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_dapg.py --env {NeedleReach-v0,PegTransfer-v0} [--expert-data <path>] [--bc-model <path>] [--timesteps N] [--bc-weight F]
    ```
+   
+   **Standard DAPG Process**:
+   1. Script automatically detects the latest BC model for the specified environment
+   2. Initializes PPO policy with BC model weights (if BC model found)
+   3. Fine-tunes the policy using PPO + BC loss with sparse rewards
+   4. If no BC model is found, starts from random initialization with BC loss guidance
 
 ### Evaluation Commands
 
@@ -172,6 +196,20 @@ pip3 install -e .
 - Data files saved as: `data/expert_data_<task_name>.pkl`
 - PegTransfer uses only successful episodes in the dataset
 
+### Standard DAPG Training Pipeline
+The project implements standard DAPG (Demonstration Augmented Policy Gradient) with the following workflow:
+
+1. **Expert Data Generation**: Generate expert demonstrations using Oracle policy
+2. **Behavioral Cloning**: Train BC model using expert data
+3. **DAPG Training**: Initialize PPO with BC weights, then fine-tune with RL
+4. **Evaluation**: Test final policy performance
+
+**Key Features**:
+- **Automatic BC model detection**: Script finds latest BC model for initialization
+- **Weight transfer**: BC model weights are loaded into PPO policy
+- **Dual loss optimization**: PPO loss + BC loss with configurable weighting
+- **Sparse reward usage**: Avoids reward hacking during fine-tuning
+
 ### Common Debugging Points
 - Environment reward calculation in task-specific `_get_reward()` methods
 - Robot kinematics and constraints in `robots/psm.py`
@@ -202,6 +240,10 @@ This document provides project-specific guidelines for designing and implementin
   - **Requirement**: **Should** use a **sparse reward** function (e.g., `0` for success, `-1` for failure).
   - **Rationale**: These algorithms are initialized with a strong prior from expert demonstrations. The primary goal is to achieve the task objective, which a sparse reward defines unambiguously. Using a dense reward can sometimes lead to "reward hacking," where the agent deviates from the expert's style to exploit minor flaws in the dense reward metric.
   - **Trigger Case**: When fine-tuning a pre-trained BC policy.
+  - **Implementation**: Our DAPG implementation uses standard approach:
+    1. Initialize PPO policy with BC model weights
+    2. Combine PPO loss with BC loss during training
+    3. Use sparse rewards to guide task completion
 
 ### Implementation Pattern
 - To support multiple reward schemes, the environment's `__init__` method should include a boolean flag to switch between them.

@@ -7,6 +7,7 @@ import torch
 import argparse
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.policies import ActorCriticPolicy as MlpPolicy
+from stable_baselines3.common.callbacks import CallbackList
 from imitation.data import types
 from imitation.util import logger as imitation_logger
 from stable_baselines3.common import logger as sb3_logger
@@ -14,9 +15,10 @@ from stable_baselines3.common import logger as sb3_logger
 # Import our custom algorithm and wrapper
 from dvrk_gym.algorithms.ppo_bc import PPOWithBCLoss
 from dvrk_gym.utils.wrappers import FlattenDictObsWrapper
+from dvrk_gym.utils.callbacks import TrainingAnalysisCallback
 import dvrk_gym  # Import to register the environment
 
-def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir, timesteps=300000, bc_weight=0.05):
+def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir, timesteps=300000, bc_weight=0.05, log_interval=1000, bc_model_path=None):
     """
     Trains an agent using our custom PPOWithBCLoss algorithm, which
     forms the basis of our DAPG implementation.
@@ -28,6 +30,7 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir, times
         log_dir (str): Directory to save training logs.
         timesteps (int): Total training timesteps.
         bc_weight (float): BC loss weight.
+        log_interval (int): Steps between analysis logging.
     """
     print("--- Custom DAPG Training ---")
     
@@ -96,6 +99,12 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir, times
 
     # --- 4. Setup Custom DAPG (PPOWithBCLoss) Trainer ---
     print("Initializing custom PPOWithBCLoss agent...")
+    
+    # Use the same network architecture as BC model to enable weight loading
+    policy_kwargs = dict(
+        net_arch=[256, 256],  # Same as BC model
+    )
+    
     model = PPOWithBCLoss(
         policy=MlpPolicy,
         env=venv,
@@ -112,12 +121,48 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir, times
         clip_range=0.2,
         ent_coef=0.0,
         verbose=1,
+        policy_kwargs=policy_kwargs,
     )
+    
+    # --- 4.5. Load BC model weights if provided (Standard DAPG approach) ---
+    if bc_model_path and os.path.exists(bc_model_path):
+        print(f"Loading BC model weights from: {bc_model_path}")
+        try:
+            # BC model was saved using imitation library's policy.save() method
+            # We need to load it as a policy directly, not as a stable-baselines3 model
+            from gymnasium.spaces import Box
+            
+            # Create the same observation space as used in BC training
+            flat_obs_space = Box(
+                low=-np.inf, high=np.inf, shape=(13,), dtype=np.float32  # PegTransfer obs size
+            )
+            
+            # Load BC policy directly
+            bc_policy = MlpPolicy.load(bc_model_path)
+            
+            # Copy BC policy weights to DAPG model
+            model.policy.load_state_dict(bc_policy.state_dict())
+            print("BC model weights loaded successfully.")
+        except Exception as e:
+            print(f"Failed to load BC model: {e}")
+            print("Starting from random initialization.")
+    else:
+        print("No BC model provided - starting from random initialization.")
+    
     print("Custom agent configured.")
+
+    # --- 4.5. Setup Training Analysis Callback ---
+    analysis_callback = TrainingAnalysisCallback(
+        log_interval=log_interval,
+        analysis_dir=os.path.join(log_dir, "analysis"),
+        algorithm="dapg",
+        verbose=1
+    )
+    print("Training analysis callback configured.")
 
     # --- 5. Train the Agent ---
     print("Starting training...")
-    model.learn(total_timesteps=timesteps)
+    model.learn(total_timesteps=timesteps, callback=analysis_callback)
     print("Training complete.")
 
     # --- 6. Save the Model ---
@@ -135,10 +180,14 @@ if __name__ == "__main__":
                        help="Environment name to train on")
     parser.add_argument("--expert-data", 
                        help="Path to expert data file (auto-detected if not provided)")
+    parser.add_argument("--bc-model", 
+                       help="Path to BC model for initialization (auto-detected if not provided)")
     parser.add_argument("--timesteps", type=int,
                        help="Total training timesteps (auto-selected if not provided)")
     parser.add_argument("--bc-weight", type=float,
                        help="BC loss weight (auto-selected if not provided)")
+    parser.add_argument("--log-interval", type=int, default=1000,
+                       help="Steps between analysis logging (default: 1000)")
     
     args = parser.parse_args()
     
@@ -169,6 +218,22 @@ if __name__ == "__main__":
         elif args.env == "PegTransfer-v0":
             args.expert_data = os.path.join("data", "expert_data_peg_transfer.pkl")
     
+    # Auto-detect BC model path if not provided
+    if args.bc_model is None:
+        import glob
+        if args.env == "NeedleReach-v0":
+            pattern = os.path.join("models", "bc_needle_reach_*.zip")
+        elif args.env == "PegTransfer-v0":
+            pattern = os.path.join("models", "bc_peg_transfer_*.zip")
+        
+        bc_models = glob.glob(pattern)
+        if bc_models:
+            args.bc_model = sorted(bc_models)[-1]  # Get the latest model
+            print(f"Auto-detected BC model: {args.bc_model}")
+        else:
+            print(f"No BC model found for {args.env} - will start from random initialization")
+            args.bc_model = None
+    
     # Create a unique directory for this experiment
     env_suffix = args.env.lower().replace("-v0", "").replace("reach", "_reach").replace("transfer", "_transfer")
     experiment_name = f"dapg_{env_suffix}_{int(time.time())}"
@@ -185,4 +250,6 @@ if __name__ == "__main__":
         log_dir=log_dir,
         timesteps=timesteps,
         bc_weight=bc_weight,
+        log_interval=args.log_interval,
+        bc_model_path=args.bc_model,
     )

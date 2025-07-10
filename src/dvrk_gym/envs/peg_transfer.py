@@ -38,9 +38,9 @@ class PegTransferEnv(DVRKEnv):
         self.render_mode = render_mode
         self.use_dense_reward = use_dense_reward
         
-        # Correctly initialize workspace limits with offset before scaling
+        # Initialize workspace limits (matching SurRoL PsmEnv parent class)
         workspace_limits = np.asarray(self.WORKSPACE_LIMITS) \
-                           + np.array([0., 0., 0.0102]).reshape((3, 1))
+                           + np.array([0., 0., 0.0102]).reshape((3, 1))  # tip-eef offset with collision margin
         self.workspace_limits = workspace_limits * self.SCALING
         
         self.distance_threshold = self.DISTANCE_THRESHOLD * self.SCALING
@@ -54,7 +54,7 @@ class PegTransferEnv(DVRKEnv):
         self.block_gripper = False
         self._activated = -1
         self._contact_constraint = None
-        self._contact_approx = True   # Use distance-based activation for better reliability  
+        self._contact_approx = False  # Use physical contact detection (original SurROL)  
         self._waypoint_goal = True   # PegTransfer has waypoint goals, so should be True
         self._waypoints = None
 
@@ -174,7 +174,7 @@ class PegTransferEnv(DVRKEnv):
     def _define_waypoints(self):
         """ Define waypoints for the oracle policy, following SurRoL implementation.
         """
-        self._waypoints = [None, None, None, None, None, None]  # six waypoints
+        self._waypoints = [None, None, None, None, None, None, None]  # seven waypoints
         
         # Get object position and orientation
         pos_obj, orn_obj = get_link_pose(self.obj_id, self.obj_link1)
@@ -188,14 +188,17 @@ class PegTransferEnv(DVRKEnv):
         yaw = orn[2] if abs(wrap_angle(orn[2] - orn_eef[2])) < abs(wrap_angle(orn[2] + np.pi - orn_eef[2])) \
               else wrap_angle(orn[2] + np.pi)
         
-        # Define waypoints adjusted for TIP-EEF offset to ensure TIP reaches object
-        # TIP is 5.1cm below EEF, need additional 1.3cm compensation based on debug results
+        # SurROL logic with TIP-EEF offset compensation for physical contact
         above_height = pos_obj[2] + 0.045 * self.SCALING  # High above object
-        approach_height = pos_obj[2] + (0.003 + 0.0102) * self.SCALING - 0.051 - 0.013  # Fine-tuned for TIP access
-        grasp_height = pos_obj[2] + (0.003 + 0.0102) * self.SCALING - 0.051 - 0.013  # Fine-tuned for TIP contact
+        
+        # Calculate grasp height to ensure TIP reaches near object surface for physical contact
+        # Target: TIP should reach object surface (or slightly below) for physical contact detection
+        object_surface_height = pos_obj[2] + (0.003 + 0.0102) * self.SCALING  # Object top surface
+        target_tip_height = object_surface_height - 0.022 * self.SCALING  # 2.2cm below surface for contact
+        grasp_height = target_tip_height + 0.051  # Add TIP-EEF offset to get EEF target
         
         self._waypoints[0] = np.array([pos_obj[0], pos_obj[1], above_height, yaw, 0.5])  # above object
-        self._waypoints[1] = np.array([pos_obj[0], pos_obj[1], approach_height, yaw, 0.5])  # approach
+        self._waypoints[1] = np.array([pos_obj[0], pos_obj[1], grasp_height, yaw, 0.5])  # approach
         self._waypoints[2] = np.array([pos_obj[0], pos_obj[1], grasp_height, yaw, -0.5])  # grasp (close gripper)
         self._waypoints[3] = np.array([pos_obj[0], pos_obj[1], above_height, yaw, -0.5])  # lift up
         
@@ -204,8 +207,14 @@ class PegTransferEnv(DVRKEnv):
         pos_place = [self.goal[0] + pos_obj[0] - pos_peg[0],
                      self.goal[1] + pos_obj[1] - pos_peg[1], self._waypoints[0][2]]
         
-        self._waypoints[4] = np.array([pos_place[0], pos_place[1], above_height, yaw, -0.5])  # above goal
-        self._waypoints[5] = np.array([pos_place[0], pos_place[1], above_height, yaw, 0.5])  # release (same height as above)
+        # Calculate lower release height for more accurate placement
+        release_height = self.goal[2] + 0.021 * self.SCALING  # 2.1cm above goal position
+        
+        self._waypoints[4] = np.array([pos_place[0], pos_place[1], above_height, yaw, -0.5])  # above goal, still grasping
+        self._waypoints[5] = np.array([pos_place[0], pos_place[1], release_height, yaw, -0.5])  # lower to release height, still grasping
+        
+        # 6th waypoint for actual release
+        self._waypoints[6] = np.array([pos_place[0], pos_place[1], release_height, yaw, 0.5])  # release at lower height
 
     def get_oracle_action(self, obs: dict) -> np.ndarray:
         """
@@ -215,7 +224,7 @@ class PegTransferEnv(DVRKEnv):
         if self._waypoints is None:
             self._define_waypoints()
         
-        # six waypoints executed in sequential order
+        # seven waypoints executed in sequential order
         action = np.zeros(5)
         for i, waypoint in enumerate(self._waypoints):
             if waypoint is None:
@@ -283,7 +292,8 @@ class PegTransferEnv(DVRKEnv):
         
         if action[4] < 0:
             self.psm1.close_jaw()
-            self._activate(0)  # Try to activate every time gripper closes (SurROL style)
+            # Use physical contact detection (original SurROL approach)
+            self._activate(0)  # Only activates if physical contact condition is met
         else:
             self.psm1.move_jaw(np.deg2rad(40))
             self._release(0)
@@ -352,7 +362,7 @@ class PegTransferEnv(DVRKEnv):
             childFramePosition=(0, 0, 0),
             childFrameOrientation=(0, 0, 0))
         
-        p.changeConstraint(self._contact_constraint, maxForce=20)
+        p.changeConstraint(self._contact_constraint, maxForce=50)
 
     def _release(self, idx: int):
         """
@@ -406,7 +416,7 @@ class PegTransferEnv(DVRKEnv):
                     childFramePosition=(0, 0, 0),
                     childFrameOrientation=(0, 0, 0))
                 
-                p.changeConstraint(self._contact_constraint, maxForce=20)
+                p.changeConstraint(self._contact_constraint, maxForce=50)
                 
                 # Disable collision to prevent interference
                 p.setCollisionFilterPair(bodyUniqueIdA=psm.body, bodyUniqueIdB=self.obj_id,
@@ -428,14 +438,17 @@ class PegTransferEnv(DVRKEnv):
     def _meet_contact_constraint_requirement(self) -> bool:
         """
         Check if the contact constraint requirement is met.
-        For PegTransfer, create constraint immediately when activated for stable grasping.
+        Following original SurROL logic: only create constraint when object is lifted above goal height.
+        This prevents grab-drop cycles by ensuring proper contact before constraint creation.
         """
         if self.block_gripper or not self.has_object:
             return False
         
-        # For PegTransfer, create constraint as soon as gripper is activated
-        # This ensures stable grasping from the beginning
-        return self._activated >= 0
+        # Original SurROL logic: create constraint only when object is lifted above goal height + 1cm
+        # This prevents premature constraint creation that can cause grab-drop cycles
+        from ..utils.pybullet_utils import get_body_pose
+        obj_pose = get_body_pose(self.obj_id)
+        return obj_pose[0][2] > self.goal[2] + 0.01 * self.SCALING
 
     def _is_success(self, obs: dict) -> bool:
         """

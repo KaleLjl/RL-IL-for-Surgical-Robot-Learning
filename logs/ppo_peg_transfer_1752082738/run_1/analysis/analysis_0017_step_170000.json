@@ -1,0 +1,55 @@
+{
+  "timestamp": "2025-07-09T19:35:10.124980",
+  "analysis_id": 17,
+  "timestep": 170000,
+  "elapsed_time": 6970.725871086121,
+  "algorithm": "ppo",
+  "metrics": {
+    "episode_reward": {
+      "mean": -1286.3644107400003,
+      "std": 2447.117866517284,
+      "min": -8627.298718,
+      "max": 185.341931,
+      "count": 100
+    },
+    "episode_length": {
+      "mean": 150.0,
+      "std": 0.0,
+      "min": 150,
+      "max": 150
+    },
+    "success_rate": {
+      "rate": 0.0,
+      "count": 100
+    },
+    "policy_loss": {
+      "mean": -9.304521727608519e-05,
+      "std": 7.734159494620559e-06,
+      "trend": "stable"
+    },
+    "value_loss": {
+      "mean": 97410.19848437501,
+      "std": 31098.57612093813,
+      "trend": "decreasing"
+    }
+  },
+  "health_check": {
+    "status": "needs_attention",
+    "issues": [
+      {
+        "type": "high_value_loss",
+        "severity": "warning",
+        "message": "Value function loss is high - may need more training data"
+      }
+    ]
+  },
+  "recommendations": [
+    {
+      "type": "batch_size",
+      "action": "increase",
+      "reason": "High reward variance - consider increasing batch size",
+      "priority": "medium"
+    }
+  ],
+  "warnings": []
+}

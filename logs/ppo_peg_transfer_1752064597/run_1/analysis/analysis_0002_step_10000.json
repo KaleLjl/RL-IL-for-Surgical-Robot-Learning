@@ -1,0 +1,42 @@
+{
+  "timestamp": "2025-07-09T12:42:32.700025",
+  "analysis_id": 2,
+  "timestep": 10000,
+  "elapsed_time": 355.0865218639374,
+  "algorithm": "ppo",
+  "metrics": {
+    "episode_reward": {
+      "mean": -18.802485545454545,
+      "std": 6.526549400836323,
+      "min": -34.756215,
+      "max": 3.001463,
+      "count": 66
+    },
+    "episode_length": {
+      "mean": 150.0,
+      "std": 0.0,
+      "min": 150,
+      "max": 150
+    },
+    "success_rate": {
+      "rate": 0.0,
+      "count": 66
+    },
+    "policy_loss": {
+      "mean": -0.010184718489472288,
+      "std": 0.0,
+      "trend": "stable"
+    },
+    "value_loss": {
+      "mean": 1.2007497921586037,
+      "std": 0.0,
+      "trend": "stable"
+    }
+  },
+  "health_check": {
+    "status": "healthy",
+    "issues": []
+  },
+  "recommendations": [],
+  "warnings": []
+}

@@ -1,8 +1,9 @@
 import gymnasium as gym
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CheckpointCallback
+from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
 import dvrk_gym
 from dvrk_gym.utils.wrappers import FlattenDictObsWrapper
+from dvrk_gym.utils.callbacks import TrainingAnalysisCallback
 import os
 import time
 import argparse
@@ -26,6 +27,8 @@ def main():
                        help="Number of steps per rollout (auto-selected if not provided)")
     parser.add_argument("--batch-size", type=int,
                        help="Batch size (auto-selected if not provided)")
+    parser.add_argument("--log-interval", type=int, default=1000,
+                       help="Steps between analysis logging (default: 1000)")
     
     args = parser.parse_args()
     
@@ -109,6 +112,17 @@ def main():
         save_replay_buffer=True,
         save_vecnormalize=True,
     )
+    
+    # Training analysis callback for debugging and monitoring
+    analysis_callback = TrainingAnalysisCallback(
+        log_interval=args.log_interval,
+        analysis_dir=os.path.join(run_dir, "analysis"),
+        algorithm="ppo",
+        verbose=1
+    )
+    
+    # Combine callbacks
+    callback_list = CallbackList([checkpoint_callback, analysis_callback])
 
     # Initialize the PPO agent with environment-specific parameters
     # Using MlpPolicy because the observation space is now a flattened Box
@@ -126,7 +140,7 @@ def main():
     print(f"Starting training on {env_name}...")
     model.learn(
         total_timesteps=timesteps, 
-        callback=checkpoint_callback
+        callback=callback_list
     )
 
     # --- Save Final Model ---

@@ -1,0 +1,14 @@
+{
+  "algorithm": "ppo",
+  "log_interval": 5000,
+  "start_time": "2025-07-09T17:13:24.609744",
+  "model_config": {
+    "learning_rate": 0.0001,
+    "n_steps": 2048,
+    "batch_size": 512,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_range": "<function constant_fn.<locals>.func at 0x780e2b5fc700>",
+    "ent_coef": 0.0
+  }
+}

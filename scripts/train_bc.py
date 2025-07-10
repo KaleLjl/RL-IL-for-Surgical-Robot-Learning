@@ -14,6 +14,7 @@ import time
 
 import dvrk_gym  # Import to register the environment
 
+
 def train_bc_agent(env_name, expert_data_path, model_save_path, log_dir):
     """
     Trains a Behavioral Cloning (BC) agent.
@@ -105,11 +106,35 @@ def train_bc_agent(env_name, expert_data_path, model_save_path, log_dir):
         low=-np.inf, high=np.inf, shape=all_obs.shape[1:], dtype=np.float32
     )
 
+    # Environment-specific hyperparameters
+    if env_name == "PegTransfer-v0":
+        # PegTransfer: Better generalization with fine-tuned parameters
+        learning_rate = 3e-5  # Lower LR for more stable learning
+        net_arch = [256, 128, 64]  # Deeper but narrower network for better feature extraction
+        n_epochs = 35  # Slightly more epochs for better convergence
+        weight_decay = 5e-4  # Moderate L2 regularization (balanced)
+    elif env_name == "NeedleReach-v0":
+        # NeedleReach: Simpler task, can handle higher LR
+        learning_rate = 1e-4
+        net_arch = [256, 256]
+        n_epochs = 200
+        weight_decay = 1e-5
+    else:
+        # Default values
+        learning_rate = 5e-5
+        net_arch = [128, 128]
+        n_epochs = 50
+        weight_decay = 5e-4
+    
     policy = MlpPolicy(
         observation_space=flat_obs_space,
         action_space=venv.action_space,
-        lr_schedule=lambda _: 0.001,
-        net_arch=[256, 256],
+        lr_schedule=lambda _: learning_rate,
+        net_arch=net_arch,
+        optimizer_kwargs={
+            "weight_decay": weight_decay,  # Add L2 regularization
+            "eps": 1e-8,
+        },
     )
 
     bc_trainer = bc.BC(
@@ -118,13 +143,27 @@ def train_bc_agent(env_name, expert_data_path, model_save_path, log_dir):
         demonstrations=transitions,
         policy=policy,
         rng=np.random.default_rng(),
+        batch_size=128,  # Larger batch size for more stable gradients
     )
     print("BC trainer configured.")
 
     # --- 5. Train the Agent ---
-    print("Starting training...")
-    bc_trainer.train(n_epochs=100, log_interval=10)
-    print("Training complete.")
+    print(f"Starting training for {env_name}...")
+    print(f"Hyperparameters: LR={learning_rate}, epochs={n_epochs}, net_arch={net_arch}, weight_decay={weight_decay}")
+    
+    # Training with monitoring for overfitting prevention
+    try:
+        print(f"Training with overfitting prevention...")
+        print(f"Watch for: l2_norm should stay < 500, loss should stay positive")
+        
+        bc_trainer.train(n_epochs=n_epochs, log_interval=5)  # More frequent logging for monitoring
+        print("Training complete.")
+        
+    except KeyboardInterrupt:
+        print("Training interrupted by user")
+    except Exception as e:
+        print(f"Training error: {e}")
+        # Continue to save the model even if training had issues
 
     # --- 6. Save the Policy ---
     os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
