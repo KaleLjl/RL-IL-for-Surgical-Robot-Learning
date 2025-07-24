@@ -16,6 +16,18 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
+dependencies = [
+    "stable-baselines3~=2.2.1",
+    "imitation~=1.0.0",
+    "roboticstoolbox-python",
+    "numpy<2.0",
+    "gymnasium",
+    "pybullet",
+    "torch~=1.13.1",
+    # Pinned to version 3.20.3 to resolve incompatibility with tensorboard
+    # See: TypeError: MessageToJson() got an unexpected keyword argument 'including_default_value_fields'
+    "protobuf==3.20.3",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

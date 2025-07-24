@@ -100,9 +100,16 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir, times
     # --- 4. Setup Custom DAPG (PPOWithBCLoss) Trainer ---
     print("Initializing custom PPOWithBCLoss agent...")
     
-    # Use the same network architecture as BC model to enable weight loading
+    # Environment-specific network architecture to match BC model
+    if env_name == "PegTransfer-v0":
+        net_arch = [128, 128]  # Match BC model for PegTransfer
+    elif env_name == "NeedleReach-v0":
+        net_arch = [256, 256]  # Keep original for NeedleReach
+    else:
+        net_arch = [256, 256]  # Default
+    
     policy_kwargs = dict(
-        net_arch=[256, 256],  # Same as BC model
+        net_arch=net_arch,  # Dynamically matched to BC model
     )
     
     model = PPOWithBCLoss(
@@ -110,15 +117,18 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir, times
         env=venv,
         expert_demonstrations=expert_demonstrations,
         bc_loss_weight=bc_weight,
-        bc_batch_size=256,
+        bc_batch_size=1024,  # Further increased for more stable BC loss
         tensorboard_log=log_dir,
-        learning_rate=3e-4,
-        n_steps=2048,
-        batch_size=64,
-        n_epochs=10,
+        learning_rate=1e-4,  # Reduced LR for more stable value function learning
+        n_steps=4096,  # Increased for better sample efficiency
+        batch_size=256,  # Significantly increased to reduce reward variance
+        n_epochs=5,  # Reduced epochs to prevent overfitting
         gamma=0.99,
         gae_lambda=0.95,
         clip_range=0.2,
+        clip_range_vf=None,  # Use same clip range for value function
+        vf_coef=0.5,  # Standard value function coefficient
+        max_grad_norm=0.5,  # Gradient clipping for stability
         ent_coef=0.0,
         verbose=1,
         policy_kwargs=policy_kwargs,
@@ -200,7 +210,7 @@ if __name__ == "__main__":
     elif args.env == "PegTransfer-v0":
         defaults = {
             "timesteps": 500000,
-            "bc_weight": 0.1,  # Higher BC weight for complex task
+            "bc_weight": 0.02,  # Further reduced BC weight to reduce over-reliance on BC
         }
     
     # Use provided arguments or fall back to environment defaults

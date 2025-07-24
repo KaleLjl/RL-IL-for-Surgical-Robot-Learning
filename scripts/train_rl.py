@@ -47,7 +47,7 @@ def main():
             "checkpoint_freq": 20000,
             "learning_rate": 1e-4,
             "n_steps": 4096,
-            "batch_size": 128,
+            "batch_size": 256,
         }
     
     # Use provided arguments or fall back to environment defaults

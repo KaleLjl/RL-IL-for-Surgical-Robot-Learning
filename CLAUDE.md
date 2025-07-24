@@ -154,7 +154,7 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evalua
 ### Monitoring and Debugging
 ```bash
 # TensorBoard for training visualization
-docker compose -f docker/docker-compose.yml exec dvrk-dev tensorboard --logdir logs
+`docker compose -f docker/docker-compose.yml exec dvrk-dev tensorboard --logdir logs`
 
 # Test environment functionality
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/test_peg_transfer.py

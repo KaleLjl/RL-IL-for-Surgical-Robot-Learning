@@ -22,16 +22,16 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 1
 # Set up the working directory
 WORKDIR /app
 
-# Copy and install Python dependencies first to leverage Docker caching
-COPY ../requirements.txt .
+# Copy only pyproject.toml first to leverage Docker caching
+COPY ../pyproject.toml .
+COPY ../src ./src
 RUN pip3 install --upgrade pip setuptools
-RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Install the package with all dependencies
+RUN pip3 install --no-cache-dir -e .
 
 # Copy the rest of the application code
 COPY . .
-
-# Install the custom dvrk_gym package in editable mode
-RUN pip3 install -e .
 
 # Set a default command to keep the container running
 CMD ["/bin/bash"]

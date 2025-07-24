@@ -14,16 +14,13 @@ services:
       - DISPLAY=:1
       # Grant access to the X server
       - QT_X11_NO_MITSHM=1
+      # NVIDIA Container Runtime
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
     # Use the host's network stack for seamless X11 forwarding
     network_mode: "host"
     # Keep the container running
     stdin_open: true
     tty: true
-    # GPU configuration
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    # GPU configuration - using runtime approach for better compatibility
+    runtime: nvidia

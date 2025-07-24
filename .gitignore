@@ -124,6 +124,7 @@ venv.bak/
 /data/
 /models/
 /archive/
+/logs/
 
 # Docker
 .dockerignore
