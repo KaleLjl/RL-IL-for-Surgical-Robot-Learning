@@ -54,7 +54,7 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev /bin/bash
 1. **Generate Expert Data**:
    ```bash
    # For NeedleReach task
-   docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/generate_expert_data.py
+   docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/generate_expert_data_needle_reach.py
    
    # For PegTransfer task
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/generate_expert_data_peg_transfer.py
@@ -121,22 +121,22 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev /bin/bash
 
 ### Evaluation Commands
 
-**For PPO models** (use `evaluate.py` with dense rewards):
+**For PPO models** (use `evaluate_rl.py` with dense rewards):
 ```bash
 # PPO evaluation - MUST use --dense-reward (matches training environment)
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evaluate.py --model-path <ppo_model.zip> --env-name NeedleReach-v0 --flatten --dense-reward
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evaluate_rl.py --model-path <ppo_model.zip> --env-name NeedleReach-v0 --flatten --dense-reward
 
 # PPO on PegTransfer
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evaluate.py --model-path <ppo_model.zip> --env-name PegTransfer-v0 --n-episodes 50 --flatten --dense-reward
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evaluate_rl.py --model-path <ppo_model.zip> --env-name PegTransfer-v0 --n-episodes 50 --flatten --dense-reward
 ```
 
-**For DAPG models** (use `evaluate.py` with sparse rewards):
+**For DAPG models** (use `evaluate_rl.py` with sparse rewards):
 ```bash
 # DAPG evaluation - do NOT use --dense-reward (uses sparse rewards like training)
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evaluate.py --model-path <dapg_model.zip> --env-name NeedleReach-v0 --flatten
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evaluate_rl.py --model-path <dapg_model.zip> --env-name NeedleReach-v0 --flatten
 
 # DAPG on PegTransfer  
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evaluate.py --model-path <dapg_model.zip> --env-name PegTransfer-v0 --n-episodes 50 --flatten
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evaluate_rl.py --model-path <dapg_model.zip> --env-name PegTransfer-v0 --n-episodes 50 --flatten
 ```
 
 **For BC models** (use `evaluate_bc.py`):
@@ -192,7 +192,7 @@ pip3 install -e .
 
 ### Expert Data Generation Pattern
 - Each environment has its own dedicated expert data generation script
-- Script naming: `generate_expert_data_<task_name>.py`
+- Script naming: `generate_expert_data_<env_name>.py` (e.g., `generate_expert_data_needle_reach.py`, `generate_expert_data_peg_transfer.py`)
 - Data files saved as: `data/expert_data_<task_name>.pkl`
 - PegTransfer uses only successful episodes in the dataset
 
