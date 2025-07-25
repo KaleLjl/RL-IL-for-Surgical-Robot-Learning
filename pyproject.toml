@@ -27,6 +27,10 @@ dependencies = [
     # Pinned to version 3.20.3 to resolve incompatibility with tensorboard
     # See: TypeError: MessageToJson() got an unexpected keyword argument 'including_default_value_fields'
     "protobuf==3.20.3",
+    # Hyperparameter optimization and visualization
+    "optuna~=3.4.0",
+    "plotly~=5.17.0",
+    "optuna-dashboard~=0.15.0",
 ]
 
 [tool.setuptools.packages.find]
