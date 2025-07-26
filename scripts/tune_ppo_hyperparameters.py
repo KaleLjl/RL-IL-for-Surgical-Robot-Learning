@@ -183,7 +183,7 @@ def optimize_hyperparameters(
     return study
 
 
-def save_results(study: optuna.Study, output_dir: str):
+def save_results(study: optuna.Study, output_dir: str, env_name: str = "PegTransfer-v0"):
     """Save optimization results and generate reports."""
     
     # Save study object
@@ -267,7 +267,7 @@ def save_results(study: optuna.Study, output_dir: str):
     if study.best_trial.value is not None:
         print(f"\n🚀 TO TRAIN WITH BEST PARAMETERS:")
         print(f"   docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_rl.py \\")
-        print(f"     --env {args.env} \\")
+        print(f"     --env {env_name} \\")
         print(f"     --timesteps 500000 \\")
         print(f"     --learning-rate {study.best_params['learning_rate']} \\")
         print(f"     --n-steps {study.best_params['n_steps']} \\")
@@ -367,7 +367,7 @@ def main():
     optimization_time = time.time() - start_time
     
     # Save and display results
-    save_results(study, output_dir)
+    save_results(study, output_dir, args.env)
     
     # Generate visualizations
     visualize_optimization(study, output_dir)
