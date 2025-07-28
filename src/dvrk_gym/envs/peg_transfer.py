@@ -528,39 +528,46 @@ class PegTransferEnv(DVRKEnv):
 
     def _get_dense_reward(self, obs: dict) -> float:
         """
-        Progressive reward system with gripper blocking to prevent reward hacking.
-        Designed to guide the robot through approach → grasp → transport sequence.
+        Intermediate states reward system with cumulative sub-goals.
+        Each sub-gesture builds on previous ones to guide learning.
         """
         if self._is_success(obs):
-            return 10.0
+            return 20.0  # Increased to ensure it dominates all sub-goals
         
         reward = 0.0
         
-        # Check actual grasp status using environment state
-        is_grasped = self._activated >= 0 and self._contact_constraint is not None
+        # Get relevant states
+        eef_pos = obs['observation'][:3]
+        obj_pos = obs['achieved_goal']
+        jaw_angle = obs['observation'][6]
+        dist_to_obj = np.linalg.norm(eef_pos - obj_pos)
         
+        # Sub-gesture 1: Approach object (max 1.0)
+        if dist_to_obj < 0.05 * self.SCALING:  # Within 5cm
+            reward += 1.0
+        
+        # Sub-gesture 2: Close positioning (additional 1.0, total 2.0)
+        if dist_to_obj < 0.02 * self.SCALING:  # Within 2cm
+            reward += 1.0
+        
+        # Sub-gesture 3: Gripper closing attempt when close (additional 2.0, total 4.0)
+        if dist_to_obj < 0.02 * self.SCALING and jaw_angle < -0.5:
+            reward += 2.0
+        
+        # Sub-gesture 4: Contact detected/activated (additional 3.0, total 7.0)
+        if self._activated >= 0:
+            reward += 3.0
+        
+        # Sub-gesture 5: Full grasp achieved (additional 5.0, total 12.0)
+        is_grasped = self._activated >= 0 and self._contact_constraint is not None
         if is_grasped:
-            # Major reward jump for successful grasp
-            reward = 5.0  # Increased from 2.0 to make grasping more attractive
+            reward += 5.0
             
-            # Transport progress bonus
+            # Sub-gesture 6: Transport progress (additional 0-5.0, total 12-17)
             initial_dist = 0.2 * self.SCALING
             current_dist = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
             progress = max(0, (initial_dist - current_dist) / initial_dist)
-            reward += 5.0 * progress  # Total: 5-10 for grasp+transport
-        else:
-            # Pre-grasp phase with controlled rewards to prevent accumulation
-            eef_pos = obs['observation'][:3]
-            obj_pos = obs['achieved_goal']
-            dist_to_obj = np.linalg.norm(eef_pos - obj_pos)
-            
-            # Balanced approach rewards - enough to guide but not exploit
-            if dist_to_obj < 0.015 * self.SCALING:  # Very close (1.5cm)
-                reward = 0.3  # Moderate positioning reward
-            elif dist_to_obj < 0.03 * self.SCALING:  # Close (3cm - gripper unlocked)
-                reward = 0.1  # Small proximity reward
-            else:  # Far - distance-based guidance
-                reward = max(0, 1 - dist_to_obj / (0.15 * self.SCALING)) * 0.05
+            reward += 5.0 * progress
         
         return reward
 

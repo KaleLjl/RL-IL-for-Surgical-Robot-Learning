@@ -54,60 +54,63 @@ def test_gripper_blocking():
 
 
 def test_reward_system():
-    """Test the new progressive reward system."""
-    print("\n=== Testing Progressive Reward System ===\n")
+    """Test the intermediate states reward system."""
+    print("\n=== Testing Intermediate States Reward System ===\n")
     
     env = gym.make('PegTransfer-v0', render_mode=None, use_dense_reward=True)
+    env.reset()
     
-    # Test different distances and scenarios
-    test_cases = [
-        ("Far from object (20cm)", 0.20),
-        ("Medium distance (5cm)", 0.05),
-        ("Close to object (3cm)", 0.03),
-        ("Very close (1.5cm)", 0.015),
-        ("Extremely close (0.5cm)", 0.005),
-    ]
+    print("Testing cumulative sub-gesture rewards:")
+    print("-" * 50)
     
-    for desc, distance_ratio in test_cases:
-        env.reset()
-        
-        # Manually set robot position for testing
-        obs_dict = env.unwrapped._get_obs()
-        obj_pos = obs_dict['achieved_goal']
-        
-        # Calculate test distance
-        test_distance = distance_ratio * env.unwrapped.SCALING
-        
-        # Create mock observation
-        mock_obs = obs_dict.copy()
-        mock_obs['observation'] = obs_dict['observation'].copy()
-        mock_obs['observation'][:3] = obj_pos + np.array([test_distance, 0, 0])
-        
-        # Get reward
-        reward = env.unwrapped._get_dense_reward(mock_obs)
-        print(f"{desc}: reward = {reward:.2f}")
+    # Test 1: Just approaching
+    obs_dict = env.unwrapped._get_obs()
+    mock_obs = obs_dict.copy()
+    mock_obs['observation'] = obs_dict['observation'].copy()
+    obj_pos = obs_dict['achieved_goal']
     
-    # Test grasp reward
-    print("\nTesting grasp reward (simulated):")
-    env.unwrapped._activated = 0
-    env.unwrapped._contact_constraint = True  # Simulate successful grasp
+    # Sub-gesture 1: Approach (5cm)
+    mock_obs['observation'][:3] = obj_pos + np.array([0.045 * env.unwrapped.SCALING, 0, 0])
+    mock_obs['observation'][6] = 1.0  # Gripper open
+    reward = env.unwrapped._get_dense_reward(mock_obs)
+    print(f"1. Approach (4.5cm): reward = {reward:.1f} (expected 1.0)")
     
-    # Test transport progress
-    for progress in [0.0, 0.25, 0.5, 0.75, 1.0]:
-        mock_obs = env.unwrapped._get_obs()
-        # Simulate transport progress by adjusting object position
-        initial_dist = 0.2 * env.unwrapped.SCALING
-        current_dist = initial_dist * (1 - progress)
-        
-        # Mock the distance
-        goal_pos = mock_obs['desired_goal']
-        mock_obs['achieved_goal'] = goal_pos + np.array([current_dist, 0, 0])
-        
-        reward = env.unwrapped._get_dense_reward(mock_obs)
-        print(f"  Transport progress {progress*100:.0f}%: reward = {reward:.2f}")
+    # Sub-gesture 2: Close positioning (1.5cm)
+    mock_obs['observation'][:3] = obj_pos + np.array([0.015 * env.unwrapped.SCALING, 0, 0])
+    mock_obs['observation'][6] = 1.0  # Gripper still open
+    reward = env.unwrapped._get_dense_reward(mock_obs)
+    print(f"2. Close position (1.5cm): reward = {reward:.1f} (expected 2.0)")
+    
+    # Sub-gesture 3: Gripper closing when close
+    mock_obs['observation'][6] = -0.7  # Gripper closing
+    env.unwrapped._activated = -1  # Not activated yet
+    reward = env.unwrapped._get_dense_reward(mock_obs)
+    print(f"3. Gripper closing: reward = {reward:.1f} (expected 4.0)")
+    
+    # Sub-gesture 4: Contact detected
+    env.unwrapped._activated = 0  # Activated
+    env.unwrapped._contact_constraint = None  # But no constraint yet
+    reward = env.unwrapped._get_dense_reward(mock_obs)
+    print(f"4. Contact detected: reward = {reward:.1f} (expected 7.0)")
+    
+    # Sub-gesture 5: Full grasp
+    env.unwrapped._contact_constraint = True  # Constraint created
+    mock_obs['achieved_goal'] = mock_obs['desired_goal'] + np.array([0.2 * env.unwrapped.SCALING, 0, 0])
+    reward = env.unwrapped._get_dense_reward(mock_obs)
+    print(f"5. Full grasp: reward = {reward:.1f} (expected 12.0)")
+    
+    # Sub-gesture 6: Transport 50%
+    mock_obs['achieved_goal'] = mock_obs['desired_goal'] + np.array([0.1 * env.unwrapped.SCALING, 0, 0])
+    reward = env.unwrapped._get_dense_reward(mock_obs)
+    print(f"6. Transport 50%: reward = {reward:.1f} (expected 14.5)")
+    
+    # Success
+    mock_obs['achieved_goal'] = mock_obs['desired_goal']
+    reward = env.unwrapped._get_dense_reward(mock_obs)
+    print(f"7. Task complete: reward = {reward:.1f} (expected 20.0)")
     
     env.close()
-    print("\n✓ Reward system tests completed")
+    print("\n✓ Intermediate states reward tests completed")
 
 
 def test_gripper_phases():
