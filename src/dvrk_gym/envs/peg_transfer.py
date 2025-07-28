@@ -33,11 +33,12 @@ class PegTransferEnv(DVRKEnv):
     POSE_PSM1 = ((0.05, 0.24, 0.8524), (0, 0, -(90 + 20) / 180 * np.pi))
     DISTANCE_THRESHOLD = 0.005
 
-    def __init__(self, render_mode: str = None, use_dense_reward: bool = False, early_exit_enabled: bool = True):
+    def __init__(self, render_mode: str = None, use_dense_reward: bool = False, early_exit_enabled: bool = True, curriculum_level: int = 4):
         # Store render_mode and reward setting
         self.render_mode = render_mode
         self.use_dense_reward = use_dense_reward
         self.early_exit_enabled = early_exit_enabled
+        self.curriculum_level = curriculum_level  # 1-4 for different curriculum stages
         
         # Initialize workspace limits (matching SurRoL PsmEnv parent class)
         workspace_limits = np.asarray(self.WORKSPACE_LIMITS) \
@@ -70,6 +71,10 @@ class PegTransferEnv(DVRKEnv):
         self._gripper_spam_counter = 0
         self._had_successful_grasp = False
         self._last_action_gripper = 0.0
+        
+        # Curriculum tracking
+        self._approach_stable_steps = 0  # For level 1
+        self._grasp_stable_steps = 0     # For level 2
 
     def _env_setup(self):
         """
@@ -187,6 +192,10 @@ class PegTransferEnv(DVRKEnv):
         self._gripper_spam_counter = 0
         self._had_successful_grasp = False
         self._last_action_gripper = 0.0
+        
+        # Reset curriculum tracking
+        self._approach_stable_steps = 0
+        self._grasp_stable_steps = 0
         
         # Call parent reset
         return super().reset(seed=seed, options=options)
@@ -501,9 +510,64 @@ class PegTransferEnv(DVRKEnv):
 
     def _is_success(self, obs: dict) -> bool:
         """
-        Check if the task is successfully completed.
-        Success is defined as placing the block close to the target peg.
+        Check if the task is successfully completed based on curriculum level.
         """
+        if self.curriculum_level == 1:
+            return self._is_level_1_success(obs)
+        elif self.curriculum_level == 2:
+            return self._is_level_2_success(obs)
+        elif self.curriculum_level == 3:
+            return self._is_level_3_success(obs)
+        else:  # Level 4 (full task)
+            return self._is_level_4_success(obs)
+    
+    def _is_level_1_success(self, obs: dict) -> bool:
+        """Level 1: Precise approach - stable positioning near object."""
+        # Check distance to object
+        eef_pos = obs['observation'][:3]
+        obj_pos = obs['achieved_goal']
+        distance = np.linalg.norm(eef_pos - obj_pos)
+        
+        # Must be within 1cm for stable approach
+        if distance < 0.01 * self.SCALING:
+            self._approach_stable_steps += 1
+        else:
+            self._approach_stable_steps = 0
+        
+        # Success: stable for 5 consecutive steps
+        return self._approach_stable_steps >= 5
+    
+    def _is_level_2_success(self, obs: dict) -> bool:
+        """Level 2: Precise grasp - stable constraint creation."""
+        # First check if level 1 criteria met
+        if not self._is_level_1_success(obs):
+            return False
+        
+        # Check for stable grasp
+        is_grasped = self._activated >= 0 and self._contact_constraint is not None
+        if is_grasped:
+            self._grasp_stable_steps += 1
+        else:
+            self._grasp_stable_steps = 0
+        
+        # Success: stable grasp for 10 consecutive steps
+        return self._grasp_stable_steps >= 10
+    
+    def _is_level_3_success(self, obs: dict) -> bool:
+        """Level 3: Precise transport - object near goal."""
+        # Must have achieved grasp first
+        is_grasped = self._activated >= 0 and self._contact_constraint is not None
+        if not is_grasped:
+            return False
+        
+        # Check distance to goal
+        goal_distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        
+        # Success: transported to within 2cm of goal
+        return goal_distance < 0.02 * self.SCALING
+    
+    def _is_level_4_success(self, obs: dict) -> bool:
+        """Level 4: Full task - original success criteria."""
         # Check both position and height constraints similar to SurRoL
         goal_distance_2d = np.linalg.norm(obs['achieved_goal'][:2] - obs['desired_goal'][:2])
         height_diff = np.abs(obs['achieved_goal'][2] - obs['desired_goal'][2])
@@ -514,11 +578,14 @@ class PegTransferEnv(DVRKEnv):
     def _get_reward(self, obs: dict) -> float:
         """
         Calculates the reward based on the current observation.
+        For curriculum learning, always use sparse rewards.
         """
-        if self.use_dense_reward:
-            return self._get_dense_reward(obs)
-        else:
+        if self.curriculum_level < 4 or not self.use_dense_reward:
+            # Always use sparse rewards for curriculum levels 1-3
             return self._get_sparse_reward(obs)
+        else:
+            # Level 4 can use dense rewards if enabled
+            return self._get_dense_reward(obs)
 
     def _get_sparse_reward(self, obs: dict) -> float:
         """
@@ -610,28 +677,47 @@ class PegTransferEnv(DVRKEnv):
         self._last_action_gripper = action[4]
 
     def _check_early_termination(self) -> bool:
-        """Check if episode should terminate early due to futile continuation."""
+        """Check if episode should terminate early based on curriculum level."""
         if not self.early_exit_enabled:
             return False
         
-        # Scenario 1: Contact timeout - touched object but no grasp after 30 steps
-        if (self._activated >= 0 and 
-            self._contact_constraint is None and 
-            self._contact_timer > 30):
-            return True
-        
-        # Scenario 2: Dropped object during transport (not near goal)
-        if (self._had_successful_grasp and 
-            self._contact_constraint is None):
-            obj_pos, _ = get_body_pose(self.obj_id)
-            dist_to_goal = np.linalg.norm(np.array(obj_pos) - self.goal)
-            if dist_to_goal > 0.05 * self.SCALING:  # Dropped far from goal
+        # Level 1: Terminate if no approach progress
+        if self.curriculum_level == 1:
+            # Early exit if far from object for too long
+            eef_pos = self._get_obs()['observation'][:3]
+            obj_pos = self._get_obs()['achieved_goal']
+            distance = np.linalg.norm(eef_pos - obj_pos)
+            
+            # If still far after 30 steps, terminate
+            if distance > 0.05 * self.SCALING and self._gripper_spam_counter > 30:
                 return True
         
-        # Scenario 3: Gripper spam - excessive gripper actions while far from object
-        if (self._activated < 0 and 
-            self._gripper_spam_counter > 50):
-            return True
+        # Level 2: Terminate if no contact progress
+        elif self.curriculum_level == 2:
+            # Early exit if no contact after achieving approach
+            if self._approach_stable_steps >= 5 and self._contact_timer > 40:
+                return True
+        
+        # Level 3 & 4: Full early exit logic
+        else:
+            # Scenario 1: Contact timeout - touched object but no grasp after 30 steps
+            if (self._activated >= 0 and 
+                self._contact_constraint is None and 
+                self._contact_timer > 30):
+                return True
+            
+            # Scenario 2: Dropped object during transport (not near goal)
+            if (self._had_successful_grasp and 
+                self._contact_constraint is None):
+                obj_pos, _ = get_body_pose(self.obj_id)
+                dist_to_goal = np.linalg.norm(np.array(obj_pos) - self.goal)
+                if dist_to_goal > 0.05 * self.SCALING:  # Dropped far from goal
+                    return True
+            
+            # Scenario 3: Gripper spam - excessive gripper actions while far from object
+            if (self._activated < 0 and 
+                self._gripper_spam_counter > 50):
+                return True
         
         return False
 
