@@ -9,6 +9,7 @@ This is a custom dVRK (da Vinci Research Kit) simulation environment built from 
 ## Core Architecture
 
 ### Main Components
+
 - **`src/dvrk_gym/`**: Core gym environment library
   - `envs/`: Environment implementations (NeedleReach, PegTransfer)
   - `robots/`: Robot models (PSM arm implementation)
@@ -18,14 +19,17 @@ This is a custom dVRK (da Vinci Research Kit) simulation environment built from 
 - **`archive/SurRoL/`**: Legacy reference implementation (not actively used)
 
 ### Environment Registration
+
 Environments are registered in `src/dvrk_gym/envs/__init__.py`:
-- `NeedleReach-v0`: Basic needle reaching task  
+
+- `NeedleReach-v0`: Basic needle reaching task
 - `PegTransfer-v0`: Peg transfer task (modeled after SurRoL implementation)
 - Additional environments can be registered following the same pattern
 
 ## Development Commands
 
 ### Docker-based Development (REQUIRED)
+
 **IMPORTANT**: ALL development work must be done through Docker containers. Never run Python scripts directly on the host machine. This ensures reproducibility and proper environment setup.
 
 ```bash
@@ -40,7 +44,9 @@ docker compose -f docker/docker-compose.yml down
 ```
 
 ### Testing and Debugging
+
 **CRITICAL**: When testing environments or running any Python code, always use the Docker container:
+
 ```bash
 # Test environment creation
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 -c "import gymnasium as gym; import dvrk_gym; env = gym.make('PegTransfer-v0'); print('Environment test passed')"
@@ -54,15 +60,17 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev /bin/bash
 ### Recommended PPO Training Workflow for PegTransfer:
 
 1. **Generate Expert Data** (if needed for comparison):
+
    ```bash
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/generate_expert_data_peg_transfer.py
    ```
 
 2. **Hyperparameter Optimization** (recommended first step):
+
    ```bash
    # Quick test to find promising parameters
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/tune_ppo_hyperparameters.py --env PegTransfer-v0 --n-trials 20 --timesteps 30000
-   
+
    # Use the best parameters found for full training (output by tuning script)
    ```
 
@@ -75,15 +83,17 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev /bin/bash
 ### Alternative Workflow Commands
 
 1. **Generate Expert Data**:
+
    ```bash
    # For NeedleReach task
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/generate_expert_data_needle_reach.py
-   
+
    # For PegTransfer task
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/generate_expert_data_peg_transfer.py
    ```
 
 2. **Train Behavioral Cloning**:
+
    ```bash
    # Train BC on PegTransfer (default expert data)
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_bc.py --env PegTransfer-v0
@@ -97,48 +107,52 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev /bin/bash
    # View all available options
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_bc.py --help
    ```
+
    - The trained model will be saved in the `models/` directory with a unique timestamped filename (e.g., `models/bc_peg_transfer_XXXXXXXXXX.zip`).
    - Training logs are saved in the `logs/` directory under a unique subfolder for each run.
    - If `--expert-data` is not specified, the script will automatically use the default expert data file for the selected environment.
 
 3. **Train Pure RL (PPO)** - Uses **PROGRESSIVE rewards** (proven to enable learning):
+
    ```bash
    # Auto-optimized for NeedleReach (100k timesteps, lr=3e-4, n_steps=2048)
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_rl.py
-   
-   # Auto-optimized for PegTransfer (300k timesteps, lr=1e-4, n_steps=4096, PROGRESSIVE rewards)  
+
+   # Auto-optimized for PegTransfer (300k timesteps, lr=1e-4, n_steps=4096, PROGRESSIVE rewards)
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_rl.py --env PegTransfer-v0
-   
+
    # Recommended parameters for PegTransfer based on reward testing (500k timesteps for better convergence)
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_rl.py --env PegTransfer-v0 --timesteps 500000 --learning-rate 3e-4 --batch-size 512
-   
+
    # All available options
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_rl.py --env {NeedleReach-v0,PegTransfer-v0} [--timesteps N] [--checkpoint-freq N] [--learning-rate F] [--n-steps N] [--batch-size N]
    ```
-   
+
    **Note**: PegTransfer now uses progressive sub-goal rewards that provide intermediate rewards for: approaching (+1), grasping attempt (+2), successful grasp (+3), transport progress (+3), and task completion (+10). This reward structure has been tested to achieve successful learning.
 
 4. **Train DAPG (RL fine-tuning)** - Uses **SPARSE rewards** and **BC model initialization**:
+
    ```bash
    # Auto-optimized for NeedleReach (300k timesteps, bc_weight=0.05, SPARSE rewards)
    # Automatically detects and loads the latest BC model for initialization
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_dapg.py
-   
+
    # Auto-optimized for PegTransfer (500k timesteps, bc_weight=0.1, SPARSE rewards for stronger BC guidance)
    # Automatically detects and loads the latest BC model for initialization
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_dapg.py --env PegTransfer-v0
-   
+
    # Manually specify BC model for initialization
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_dapg.py --env PegTransfer-v0 --bc-model models/bc_peg_transfer_1234567890.zip
-   
+
    # Override specific parameters (automatically gets SPARSE rewards)
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_dapg.py --env PegTransfer-v0 --bc-weight 0.15
-   
+
    # All available options
    docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/train_dapg.py --env {NeedleReach-v0,PegTransfer-v0} [--expert-data <path>] [--bc-model <path>] [--timesteps N] [--bc-weight F]
    ```
-   
+
    **Standard DAPG Process**:
+
    1. Script automatically detects the latest BC model for the specified environment
    2. Initializes PPO policy with BC model weights (if BC model found)
    3. Fine-tunes the policy using PPO + BC loss with sparse rewards
@@ -147,6 +161,7 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev /bin/bash
 ### Hyperparameter Tuning Commands
 
 **PPO Hyperparameter Optimization** - Uses Optuna for Bayesian optimization:
+
 ```bash
 # Quick tuning test (10 trials, 30k steps each)
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/tune_ppo_hyperparameters.py --env PegTransfer-v0 --n-trials 10 --timesteps 30000
@@ -162,6 +177,7 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev optuna-dashboard sqlit
 ```
 
 The tuning script will:
+
 - Test different hyperparameter combinations using Bayesian optimization
 - Use early stopping to prune unpromising trials
 - Prioritize configurations that achieve successful grasps
@@ -171,6 +187,7 @@ The tuning script will:
 ### Evaluation Commands
 
 **For PPO models** (use `evaluate_rl.py` with dense rewards):
+
 ```bash
 # PPO evaluation - MUST use --dense-reward (matches training environment)
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evaluate_rl.py --model-path <ppo_model.zip> --env-name NeedleReach-v0 --flatten --dense-reward
@@ -180,15 +197,17 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evalua
 ```
 
 **For DAPG models** (use `evaluate_rl.py` with sparse rewards):
+
 ```bash
 # DAPG evaluation - do NOT use --dense-reward (uses sparse rewards like training)
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evaluate_rl.py --model-path <dapg_model.zip> --env-name NeedleReach-v0 --flatten
 
-# DAPG on PegTransfer  
+# DAPG on PegTransfer
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evaluate_rl.py --model-path <dapg_model.zip> --env-name PegTransfer-v0 --n-episodes 50 --flatten
 ```
 
 **For BC models** (use `evaluate_bc.py`):
+
 ```bash
 # Default evaluation (NeedleReach-v0, 100 episodes)
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evaluate_bc.py --model-path <path_to_model.zip>
@@ -200,7 +219,8 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evalua
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/evaluate_bc.py --model-path <path> --env {NeedleReach-v0,PegTransfer-v0} --episodes 100 --no-render
 ```
 
-### Monitoring and Debugging
+`### Monitoring and Debugging
+
 ```bash
 # TensorBoard for training visualization
 `docker compose -f docker/docker-compose.yml exec dvrk-dev tensorboard --logdir logs`
@@ -210,6 +230,7 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/test_p
 ```
 
 ### Package Installation
+
 ```bash
 # Install in editable mode
 pip3 install -e .
@@ -218,15 +239,18 @@ pip3 install -e .
 ## Important Technical Details
 
 ### Reward Systems
+
 - **PPO**: Uses progressive sub-goal rewards (`use_dense_reward=True`) - proven to enable learning
 - **DAPG**: Uses sparse rewards to avoid reward hacking
 - **BC**: Reward-agnostic (uses expert demonstrations)
 
 ### Observation Handling
+
 - RL/DAPG training uses `FlattenDictObsWrapper` for Stable-Baselines3 compatibility
 - Always use `--flatten` flag when evaluating RL models
 
 ### Key Dependencies
+
 - `stable-baselines3~=2.2.1`: RL algorithms
 - `imitation~=1.0.0`: Behavioral cloning and DAPG
 - `pybullet`: Physics simulation
@@ -237,18 +261,21 @@ pip3 install -e .
 - `optuna-dashboard~=0.15.0`: Web interface for monitoring optimization progress
 
 ### File Structure Patterns
+
 - Environment classes inherit from `dvrk_gym.envs.dvrk_env.DVRKEnv`
 - Robot implementations in `dvrk_gym.robots.psm.Psm`
 - Assets follow standard PyBullet URDF structure in `assets/`
 - Training logs saved to `logs/` with timestamped directories
 
 ### Expert Data Generation Pattern
+
 - Each environment has its own dedicated expert data generation script
 - Script naming: `generate_expert_data_<env_name>.py` (e.g., `generate_expert_data_needle_reach.py`, `generate_expert_data_peg_transfer.py`)
 - Data files saved as: `data/expert_data_<task_name>.pkl`
 - PegTransfer uses only successful episodes in the dataset
 
 ### Standard DAPG Training Pipeline
+
 The project implements standard DAPG (Demonstration Augmented Policy Gradient) with the following workflow:
 
 1. **Expert Data Generation**: Generate expert demonstrations using Oracle policy
@@ -257,12 +284,14 @@ The project implements standard DAPG (Demonstration Augmented Policy Gradient) w
 4. **Evaluation**: Test final policy performance
 
 **Key Features**:
+
 - **Automatic BC model detection**: Script finds latest BC model for initialization
 - **Weight transfer**: BC model weights are loaded into PPO policy
 - **Dual loss optimization**: PPO loss + BC loss with configurable weighting
 - **Sparse reward usage**: Avoids reward hacking during fine-tuning
 
 ### Common Debugging Points
+
 - Environment reward calculation in task-specific `_get_reward()` methods
 - Robot kinematics and constraints in `robots/psm.py`
 - Contact detection and grasping logic in individual task files
@@ -271,20 +300,24 @@ The project implements standard DAPG (Demonstration Augmented Policy Gradient) w
 ## Reward System Design Philosophy
 
 ### Brief overview
+
 This document provides project-specific guidelines for designing and implementing reward systems in our custom `dvrk_gym` environments. The core principle is that the reward function must be tailored to the specific learning algorithm being used.
 
 ### Reward System Design Philosophy
+
 - **One Size Does Not Fit All**: A single reward function is often insufficient for the entire policy development workflow (e.g., pure RL vs. imitation-based RL). Environments should be designed to support multiple reward schemes.
 - **Clarity Over Complexity**: The purpose of each reward scheme should be clearly documented.
 
 ### Algorithm-Specific Reward Requirements
 
 - **Pure Reinforcement Learning (e.g., PPO from scratch)**
+
   - **Requirement**: **Must** use a **dense reward** function.
   - **Rationale**: Pure RL agents learn via trial and error and have no prior knowledge. A dense reward (e.g., negative distance to the goal) provides a continuous learning signal, guiding the agent's exploration. Without it, the agent is learning "blind" and will likely fail to discover the correct behavior in a reasonable amount of time.
   - **Trigger Case**: When training a policy from a random initialization.
 
 - **Imitation Learning (e.g., Behavioral Cloning - BC)**
+
   - **Requirement**: The reward system is **not used** during training.
   - **Rationale**: BC is a supervised learning method that learns by minimizing the difference between its actions and a provided set of expert actions. It does not use environmental rewards.
 
@@ -298,19 +331,22 @@ This document provides project-specific guidelines for designing and implementin
     3. Use sparse rewards to guide task completion
 
 ### Implementation Pattern
+
 - To support multiple reward schemes, the environment's `__init__` method should include a boolean flag to switch between them.
 - **Example**:
+
   ```python
   def __init__(self, use_dense_reward: bool = False):
       self.use_dense_reward = use_dense_reward
       ...
-  
+
   def _get_reward(self, obs):
       if self.use_dense_reward:
           return self._get_dense_reward(obs)
       else:
           return self._get_sparse_reward(obs)
   ```
+
 - The training script is then responsible for enabling the correct mode (e.g., `gym.make("MyEnv-v0", use_dense_reward=True)` for pure RL).
 
 ## PegTransfer Debugging Guide
@@ -318,44 +354,54 @@ This document provides project-specific guidelines for designing and implementin
 ### Critical Issues and Solutions When Mimicking SurROL
 
 #### 1. TIP-EEF Offset Problem
+
 **Issue**: Robot reaches waypoints but never activates grasping (activated=-1)
 
 **Root Cause**: TIP is 5.1cm below EEF, but waypoints calculated for EEF position
 
-**Detection**: 
+**Detection**:
+
 - TIP-object distance stays >1cm (activation threshold)
 - Robot appears to "grasp air" above objects
 
 **Solution**: Subtract TIP-EEF offset from grasp waypoint heights:
+
 ```python
 # In _define_waypoints()
 grasp_height = pos_obj[2] + (0.003 + 0.0102) * self.SCALING - 0.051 - 0.013
 ```
 
 #### 2. Activation vs Constraint Creation
+
 **Issue**: Robot activates (activated=0) but doesn't physically grasp objects
 
 **Root Cause**: `_meet_contact_constraint_requirement()` requires object height > goal+5cm
 
 **Detection**:
+
 - activated=0 but constraint=False
 - Object height never changes during "grasping"
 
 **Solution**: Create constraint immediately upon activation:
+
 ```python
 def _meet_contact_constraint_requirement(self) -> bool:
     return self._activated >= 0  # Create constraint as soon as activated
 ```
 
 #### 3. Contact Detection Settings
+
 **Critical Settings for PegTransfer**:
+
 ```python
 self._contact_approx = True   # Use distance-based activation (threshold: 1cm)
 self._waypoint_goal = True    # PegTransfer has waypoint goals
 ```
 
 #### 4. Precision Analysis Workflow
+
 1. **Use debug scripts to measure exact distances**:
+
    - `debug_precision.py` - Analyze waypoint reaching precision
    - `debug_near_miss.py` - Find closest approach distance and offset vectors
    - `debug_activation.py` - Monitor activation thresholds
@@ -367,34 +413,39 @@ self._waypoint_goal = True    # PegTransfer has waypoint goals
    - Activation threshold: `2e-3 * SCALING` (1cm for SCALING=5)
 
 #### 5. Coordinate System Verification
+
 - `pose_rcm2world()` returns EEF position, not TIP
 - Observations use EEF coordinates (`obs['observation'][:3]`)
 - Activation detection uses TIP coordinates
 - This mismatch requires height compensation in waypoint calculations
 
 #### 6. Debug Script Usage Pattern
+
 ```bash
 # Step-by-step debugging approach:
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/debug_precision.py
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/debug_near_miss.py  
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/debug_near_miss.py
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/debug_activation.py
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/debug_constraint.py
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/debug_full_workflow.py
 ```
 
 #### 7. Success Indicators
+
 - **Activation Success**: activated=0, TIP-object distance <1cm
 - **Constraint Success**: constraint=True, object height increases
-- **Task Success**: terminated=True, object-goal distance <3cm  
+- **Task Success**: terminated=True, object-goal distance <3cm
 - **Precision Target**: TIP-object distance <0.5mm during grasping
 
 #### 8. Common Failure Patterns
+
 - **"Grasping air"**: TIP-EEF offset not compensated in waypoints
 - **"Touches but doesn't grab"**: Constraint creation conditions too strict
 - **"Robot stuck in air"**: Workspace limits preventing downward movement
 - **"Never activates"**: contact_approx=False requires physical contact vs distance-based
 
 ## Testing and Validation
+
 - Use scripts in `scripts/debug_*.py` for specific debugging
 - `scripts/comprehensive_test.py` for full environment validation
 - Always test in Docker environment to ensure reproducibility

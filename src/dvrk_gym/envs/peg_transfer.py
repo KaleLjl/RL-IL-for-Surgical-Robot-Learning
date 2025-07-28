@@ -286,6 +286,34 @@ class PegTransferEnv(DVRKEnv):
         # Move the robot
         self.psm1.move(action_rcm)
         
+        # Dynamic gripper blocking based on task phase
+        # Check if currently grasping an object
+        is_grasped = self._activated >= 0 and self._contact_constraint is not None
+        
+        # Get object position
+        obj_pos, _ = get_body_pose(self.obj_id)
+        
+        if is_grasped:
+            # Transport phase: Keep gripper closed until near goal
+            dist_to_goal = np.linalg.norm(np.array(obj_pos) - self.goal)
+            
+            # Only allow opening gripper when very close to goal (2cm)
+            if dist_to_goal > 0.02 * self.SCALING:
+                self.block_gripper = True  # Force closed during transport
+            else:
+                self.block_gripper = False  # Allow release near goal
+        else:
+            # Approach phase: Block gripper when far from object
+            # Use TIP position for consistency with contact detection
+            tip_pos, _ = get_link_pose(self.psm1.body, self.psm1.TIP_LINK_INDEX)
+            dist_to_obj = np.linalg.norm(np.array(tip_pos) - np.array(obj_pos))
+            
+            # Block gripper if too far from object (3cm threshold)
+            if dist_to_obj > 0.03 * self.SCALING:
+                self.block_gripper = True
+            else:
+                self.block_gripper = False
+        
         # Handle gripper
         if self.block_gripper:
             action[4] = -1
@@ -500,8 +528,8 @@ class PegTransferEnv(DVRKEnv):
 
     def _get_dense_reward(self, obs: dict) -> float:
         """
-        Penalty-based reward system to prevent reward hacking.
-        Validated through testing to be robust against exploitation.
+        Progressive reward system with gripper blocking to prevent reward hacking.
+        Designed to guide the robot through approach → grasp → transport sequence.
         """
         if self._is_success(obs):
             return 10.0
@@ -512,30 +540,27 @@ class PegTransferEnv(DVRKEnv):
         is_grasped = self._activated >= 0 and self._contact_constraint is not None
         
         if is_grasped:
-            # Strong reward for successful grasp + transport progress
+            # Major reward jump for successful grasp
+            reward = 5.0  # Increased from 2.0 to make grasping more attractive
+            
+            # Transport progress bonus
             initial_dist = 0.2 * self.SCALING
             current_dist = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
             progress = max(0, (initial_dist - current_dist) / initial_dist)
-            reward = 2.0 + (5.0 * progress)  # 2 for grasp, up to 5 for transport
+            reward += 5.0 * progress  # Total: 5-10 for grasp+transport
         else:
-            # Pre-grasp phase
+            # Pre-grasp phase with controlled rewards to prevent accumulation
             eef_pos = obs['observation'][:3]
             obj_pos = obs['achieved_goal']
-            jaw_angle = obs['observation'][6]
             dist_to_obj = np.linalg.norm(eef_pos - obj_pos)
             
-            if self._activated >= 0 and jaw_angle < 0:
-                # Gripper activated but no constraint yet
-                if dist_to_obj < 0.01 * self.SCALING:  # Very close
-                    reward = 0.5  # Small reward for good positioning
-                else:
-                    reward = -0.3  # Penalty for premature activation
-            else:
-                # Approach phase - small distance-based reward
-                if dist_to_obj < 0.02 * self.SCALING:
-                    reward = 0.3
-                else:
-                    reward = max(0, 1 - dist_to_obj / (0.1 * self.SCALING)) * 0.1
+            # Balanced approach rewards - enough to guide but not exploit
+            if dist_to_obj < 0.015 * self.SCALING:  # Very close (1.5cm)
+                reward = 0.3  # Moderate positioning reward
+            elif dist_to_obj < 0.03 * self.SCALING:  # Close (3cm - gripper unlocked)
+                reward = 0.1  # Small proximity reward
+            else:  # Far - distance-based guidance
+                reward = max(0, 1 - dist_to_obj / (0.15 * self.SCALING)) * 0.05
         
         return reward
 
