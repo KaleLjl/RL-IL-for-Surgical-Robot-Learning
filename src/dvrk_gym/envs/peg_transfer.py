@@ -57,6 +57,13 @@ class PegTransferEnv(DVRKEnv):
         self._contact_approx = False  # Use physical contact detection (original SurROL)  
         self._waypoint_goal = True   # PegTransfer has waypoint goals, so should be True
         self._waypoints = None
+        
+        # Reward tracking to prevent exploitation
+        self._approach_achieved = False
+        self._position_achieved = False
+        self._gripper_attempt_achieved = False
+        self._contact_achieved = False
+        self._grasp_achieved = False
 
     def _env_setup(self):
         """
@@ -160,6 +167,18 @@ class PegTransferEnv(DVRKEnv):
         goal_pos, _ = get_link_pose(self.peg_board_id, self._pegs[0])
         goal = np.array(goal_pos, dtype=np.float32)
         return goal.copy()
+    
+    def reset(self, seed=None, options=None):
+        """Reset environment and clear reward tracking flags."""
+        # Reset reward tracking flags
+        self._approach_achieved = False
+        self._position_achieved = False
+        self._gripper_attempt_achieved = False
+        self._contact_achieved = False
+        self._grasp_achieved = False
+        
+        # Call parent reset
+        return super().reset(seed=seed, options=options)
 
     def _sample_goal_callback(self):
         """ Moves the goal visualization sphere to the new goal position.
@@ -528,11 +547,11 @@ class PegTransferEnv(DVRKEnv):
 
     def _get_dense_reward(self, obs: dict) -> float:
         """
-        Intermediate states reward system with cumulative sub-goals.
-        Each sub-gesture builds on previous ones to guide learning.
+        One-time intermediate states reward system.
+        Each sub-gesture reward is given only once to prevent exploitation.
         """
         if self._is_success(obs):
-            return 20.0  # Increased to ensure it dominates all sub-goals
+            return 20.0
         
         reward = 0.0
         
@@ -542,32 +561,38 @@ class PegTransferEnv(DVRKEnv):
         jaw_angle = obs['observation'][6]
         dist_to_obj = np.linalg.norm(eef_pos - obj_pos)
         
-        # Sub-gesture 1: Approach object (max 1.0)
-        if dist_to_obj < 0.05 * self.SCALING:  # Within 5cm
+        # Sub-gesture 1: Approach object (one-time 1.0)
+        if dist_to_obj < 0.05 * self.SCALING and not self._approach_achieved:
             reward += 1.0
+            self._approach_achieved = True
         
-        # Sub-gesture 2: Close positioning (additional 1.0, total 2.0)
-        if dist_to_obj < 0.02 * self.SCALING:  # Within 2cm
+        # Sub-gesture 2: Close positioning (one-time 1.0)
+        if dist_to_obj < 0.02 * self.SCALING and not self._position_achieved:
             reward += 1.0
+            self._position_achieved = True
         
-        # Sub-gesture 3: Gripper closing attempt when close (additional 2.0, total 4.0)
-        if dist_to_obj < 0.02 * self.SCALING and jaw_angle < -0.5:
+        # Sub-gesture 3: Gripper closing attempt when close (one-time 2.0)
+        if dist_to_obj < 0.02 * self.SCALING and jaw_angle < -0.5 and not self._gripper_attempt_achieved:
             reward += 2.0
+            self._gripper_attempt_achieved = True
         
-        # Sub-gesture 4: Contact detected/activated (additional 3.0, total 7.0)
-        if self._activated >= 0:
+        # Sub-gesture 4: Contact detected/activated (one-time 3.0)
+        if self._activated >= 0 and not self._contact_achieved:
             reward += 3.0
+            self._contact_achieved = True
         
-        # Sub-gesture 5: Full grasp achieved (additional 5.0, total 12.0)
+        # Sub-gesture 5: Full grasp achieved (one-time 5.0)
         is_grasped = self._activated >= 0 and self._contact_constraint is not None
-        if is_grasped:
+        if is_grasped and not self._grasp_achieved:
             reward += 5.0
+            self._grasp_achieved = True
             
-            # Sub-gesture 6: Transport progress (additional 0-5.0, total 12-17)
+        # Sub-gesture 6: Transport progress (continuous but only if grasped)
+        if is_grasped:
             initial_dist = 0.2 * self.SCALING
             current_dist = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
             progress = max(0, (initial_dist - current_dist) / initial_dist)
-            reward += 5.0 * progress
+            reward += 5.0 * progress * 0.1  # Scaled down to 0.5 max per step
         
         return reward
 
