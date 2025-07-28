@@ -33,10 +33,11 @@ class PegTransferEnv(DVRKEnv):
     POSE_PSM1 = ((0.05, 0.24, 0.8524), (0, 0, -(90 + 20) / 180 * np.pi))
     DISTANCE_THRESHOLD = 0.005
 
-    def __init__(self, render_mode: str = None, use_dense_reward: bool = False):
+    def __init__(self, render_mode: str = None, use_dense_reward: bool = False, early_exit_enabled: bool = True):
         # Store render_mode and reward setting
         self.render_mode = render_mode
         self.use_dense_reward = use_dense_reward
+        self.early_exit_enabled = early_exit_enabled
         
         # Initialize workspace limits (matching SurRoL PsmEnv parent class)
         workspace_limits = np.asarray(self.WORKSPACE_LIMITS) \
@@ -51,7 +52,6 @@ class PegTransferEnv(DVRKEnv):
         
         # Task-specific attributes
         self.has_object = True
-        self.block_gripper = False
         self._activated = -1
         self._contact_constraint = None
         self._contact_approx = False  # Use physical contact detection (original SurROL)  
@@ -64,6 +64,12 @@ class PegTransferEnv(DVRKEnv):
         self._gripper_attempt_achieved = False
         self._contact_achieved = False
         self._grasp_achieved = False
+        
+        # Early exit tracking
+        self._contact_timer = 0
+        self._gripper_spam_counter = 0
+        self._had_successful_grasp = False
+        self._last_action_gripper = 0.0
 
     def _env_setup(self):
         """
@@ -99,7 +105,6 @@ class PegTransferEnv(DVRKEnv):
         orn = (0.5, 0.5, -0.5, -0.5)
         joint_positions = self.psm1.inverse_kinematics((pos, orn), self.psm1.EEF_LINK_INDEX)
         self.psm1.reset_joint(joint_positions)
-        self.block_gripper = False
 
     def _load_blocks(self):
         """
@@ -176,6 +181,12 @@ class PegTransferEnv(DVRKEnv):
         self._gripper_attempt_achieved = False
         self._contact_achieved = False
         self._grasp_achieved = False
+        
+        # Reset early exit tracking
+        self._contact_timer = 0
+        self._gripper_spam_counter = 0
+        self._had_successful_grasp = False
+        self._last_action_gripper = 0.0
         
         # Call parent reset
         return super().reset(seed=seed, options=options)
@@ -305,38 +316,10 @@ class PegTransferEnv(DVRKEnv):
         # Move the robot
         self.psm1.move(action_rcm)
         
-        # Dynamic gripper blocking based on task phase
-        # Check if currently grasping an object
-        is_grasped = self._activated >= 0 and self._contact_constraint is not None
+        # Update early exit tracking before gripper handling
+        self._update_early_exit_tracking(action)
         
-        # Get object position
-        obj_pos, _ = get_body_pose(self.obj_id)
-        
-        if is_grasped:
-            # Transport phase: Keep gripper closed until near goal
-            dist_to_goal = np.linalg.norm(np.array(obj_pos) - self.goal)
-            
-            # Only allow opening gripper when very close to goal (2cm)
-            if dist_to_goal > 0.02 * self.SCALING:
-                self.block_gripper = True  # Force closed during transport
-            else:
-                self.block_gripper = False  # Allow release near goal
-        else:
-            # Approach phase: Block gripper when far from object
-            # Use TIP position for consistency with contact detection
-            tip_pos, _ = get_link_pose(self.psm1.body, self.psm1.TIP_LINK_INDEX)
-            dist_to_obj = np.linalg.norm(np.array(tip_pos) - np.array(obj_pos))
-            
-            # Block gripper if too far from object (3cm threshold)
-            if dist_to_obj > 0.03 * self.SCALING:
-                self.block_gripper = True
-            else:
-                self.block_gripper = False
-        
-        # Handle gripper
-        if self.block_gripper:
-            action[4] = -1
-        
+        # Handle gripper (no blocking - let agent control freely)
         if action[4] < 0:
             self.psm1.close_jaw()
             # Use physical contact detection (original SurROL approach)
@@ -352,8 +335,6 @@ class PegTransferEnv(DVRKEnv):
         """
         Activation logic for grasping following SurRoL implementation.
         """
-        if self.block_gripper:
-            return
         
         if self._activated < 0:
             # Only activate one psm
@@ -436,7 +417,7 @@ class PegTransferEnv(DVRKEnv):
         """
         Release the grasped object.
         """
-        if self.block_gripper or self._activated != idx:
+        if self._activated != idx:
             return
         
         self._activated = -1
@@ -460,7 +441,7 @@ class PegTransferEnv(DVRKEnv):
         Process contact constraints after each action step.
         This is crucial for proper grasping behavior.
         """
-        if self.block_gripper or not self.has_object or self._activated < 0:
+        if not self.has_object or self._activated < 0:
             return
         elif self._contact_constraint is None:
             # The gripper is activated; check if we can create a constraint
@@ -509,7 +490,7 @@ class PegTransferEnv(DVRKEnv):
         Relaxed constraint creation: create constraint when object is lifted above goal height + 0.5cm.
         This makes grasping more forgiving while still preventing grab-drop cycles.
         """
-        if self.block_gripper or not self.has_object:
+        if not self.has_object:
             return False
         
         # Relaxed constraint creation: only need 0.5cm lift instead of 1cm
@@ -595,6 +576,64 @@ class PegTransferEnv(DVRKEnv):
             reward += 5.0 * progress * 0.1  # Scaled down to 0.5 max per step
         
         return reward
+
+    def _update_early_exit_tracking(self, action: np.ndarray):
+        """Update tracking variables for early exit conditions."""
+        if not self.early_exit_enabled:
+            return
+        
+        # Track successful grasp flag
+        is_grasped = self._activated >= 0 and self._contact_constraint is not None
+        if is_grasped and not self._had_successful_grasp:
+            self._had_successful_grasp = True
+        
+        # Track contact timer
+        if self._activated >= 0:
+            self._contact_timer += 1
+        else:
+            self._contact_timer = 0
+        
+        # Track gripper spam (when far from object)
+        tip_pos, _ = get_link_pose(self.psm1.body, self.psm1.TIP_LINK_INDEX)
+        obj_pos, _ = get_body_pose(self.obj_id)
+        distance = np.linalg.norm(np.array(tip_pos) - np.array(obj_pos))
+        
+        # Count as spam if far from object AND gripper action changes
+        if (self._activated < 0 and  # No contact
+            distance > 0.03 * self.SCALING and  # Far from object (>3cm)
+            abs(action[4]) > 0.5):  # Significant gripper action
+            self._gripper_spam_counter += 1
+        else:
+            # Reset counter if doing useful actions
+            self._gripper_spam_counter = max(0, self._gripper_spam_counter - 1)
+        
+        self._last_action_gripper = action[4]
+
+    def _check_early_termination(self) -> bool:
+        """Check if episode should terminate early due to futile continuation."""
+        if not self.early_exit_enabled:
+            return False
+        
+        # Scenario 1: Contact timeout - touched object but no grasp after 30 steps
+        if (self._activated >= 0 and 
+            self._contact_constraint is None and 
+            self._contact_timer > 30):
+            return True
+        
+        # Scenario 2: Dropped object during transport (not near goal)
+        if (self._had_successful_grasp and 
+            self._contact_constraint is None):
+            obj_pos, _ = get_body_pose(self.obj_id)
+            dist_to_goal = np.linalg.norm(np.array(obj_pos) - self.goal)
+            if dist_to_goal > 0.05 * self.SCALING:  # Dropped far from goal
+                return True
+        
+        # Scenario 3: Gripper spam - excessive gripper actions while far from object
+        if (self._activated < 0 and 
+            self._gripper_spam_counter > 50):
+            return True
+        
+        return False
 
     def _get_obs_robot_state(self):
         """

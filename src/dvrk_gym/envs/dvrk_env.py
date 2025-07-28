@@ -59,8 +59,15 @@ class DVRKEnv(gym.Env):
         obs = self._get_obs()
         reward = self._get_reward(obs)
         terminated = self._is_success(obs)
-        truncated = False # Placeholder
+        
+        # Check for early termination (if implemented by subclass)
+        truncated = False
+        if hasattr(self, '_check_early_termination'):
+            truncated = self._check_early_termination()
+        
         info = {'is_success': terminated}
+        if truncated:
+            info['early_exit'] = True
 
         return obs, reward, terminated, truncated, info
 
