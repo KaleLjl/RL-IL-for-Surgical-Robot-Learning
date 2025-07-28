@@ -245,9 +245,25 @@ class CurriculumManager:
         state_to_save = self.state.copy()
         state_to_save["episode_results"] = list(self.state["episode_results"])
         
+        # Convert NumPy types to Python native types
+        def convert_numpy_types(obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {key: convert_numpy_types(value) for key, value in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_types(item) for item in obj]
+            elif isinstance(obj, deque):
+                return [convert_numpy_types(item) for item in obj]
+            return obj
+        
         save_data = {
-            "state": state_to_save,
-            "level_stats": self.level_stats,
+            "state": convert_numpy_types(state_to_save),
+            "level_stats": convert_numpy_types(self.level_stats),
             "save_time": datetime.now().isoformat(),
         }
         

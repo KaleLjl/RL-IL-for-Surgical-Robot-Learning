@@ -157,7 +157,7 @@ TRAINING_CONFIG = {
 
 # Environment configuration
 ENV_CONFIG = {
-    "render_mode": "human",  # Set to "human" for visualization during training
+    "render_mode": None,  # Set to "human" for visualization during training
     "use_dense_reward": False,  # Always use sparse rewards for curriculum
     "early_exit_enabled": True,  # Enable early exit for efficiency
 }
