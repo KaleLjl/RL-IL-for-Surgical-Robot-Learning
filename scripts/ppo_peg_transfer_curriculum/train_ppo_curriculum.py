@@ -40,15 +40,23 @@ class ManualProgressCallback(BaseCallback):
     
     def __init__(self, 
                  level: int,
-                 verbose: int = 1):
+                 verbose: int = 1,
+                 log_freq: int = 50):
         super().__init__(verbose)
         self.level = level
         self.episode_count = 0
         self.success_count = 0
         self.episode_rewards = []
         self.episode_lengths = []
+        self.log_freq = log_freq
+        self.start_time = time.time()
+        self.last_success_count = 0
+        self.timesteps_done = 0
         
     def _on_step(self) -> bool:
+        # Update timestep counter
+        self.timesteps_done += 1
+        
         # Check if episode ended
         if self.locals.get("dones")[0]:
             info = self.locals.get("infos")[0]
@@ -64,18 +72,53 @@ class ManualProgressCallback(BaseCallback):
             self.episode_rewards.append(episode_reward)
             self.episode_lengths.append(episode_length)
             
-            # Print progress every 100 episodes
-            if self.episode_count % 100 == 0:
-                success_rate = self.success_count / self.episode_count
-                avg_reward = np.mean(self.episode_rewards[-100:])
-                avg_length = np.mean(self.episode_lengths[-100:])
+            # Print progress at specified frequency
+            if self.episode_count % self.log_freq == 0:
+                # Calculate metrics
+                elapsed_time = time.time() - self.start_time
+                episodes_per_second = self.episode_count / elapsed_time
+                timesteps_per_second = self.timesteps_done / elapsed_time
                 
-                print(f"\n--- Level {self.level} Progress Report ---")
-                print(f"Episodes: {self.episode_count}")
-                print(f"Success Rate: {success_rate:.1%} ({self.success_count}/{self.episode_count})")
-                print(f"Recent Avg Reward: {avg_reward:.2f}")
-                print(f"Recent Avg Length: {avg_length:.1f}")
-                print("-" * 40)
+                overall_success_rate = self.success_count / self.episode_count
+                recent_episodes = min(self.log_freq, len(self.episode_rewards))
+                recent_success_rate = (self.success_count - self.last_success_count) / recent_episodes
+                self.last_success_count = self.success_count
+                
+                recent_rewards = self.episode_rewards[-recent_episodes:]
+                recent_lengths = self.episode_lengths[-recent_episodes:]
+                
+                # Print comprehensive progress report
+                print(f"\n{'='*60}")
+                print(f"LEVEL {self.level} TRAINING PROGRESS - Episode {self.episode_count}")
+                print(f"{'='*60}")
+                print(f"Time Elapsed: {elapsed_time/60:.1f} min | Speed: {episodes_per_second:.1f} eps/sec, {timesteps_per_second:.0f} steps/sec")
+                print(f"{'─'*60}")
+                print(f"Overall Success Rate: {overall_success_rate:6.1%} ({self.success_count}/{self.episode_count})")
+                print(f"Recent Success Rate:  {recent_success_rate:6.1%} (last {recent_episodes} episodes)")
+                print(f"{'─'*60}")
+                print(f"Recent Avg Reward:    {np.mean(recent_rewards):6.1f} ± {np.std(recent_rewards):.1f}")
+                print(f"Recent Min/Max:       {np.min(recent_rewards):6.1f} / {np.max(recent_rewards):.1f}")
+                print(f"Recent Avg Length:    {np.mean(recent_lengths):6.1f} steps")
+                print(f"{'─'*60}")
+                
+                # Add trend indicator
+                if len(self.episode_rewards) >= self.log_freq * 2:
+                    old_rewards = self.episode_rewards[-2*self.log_freq:-self.log_freq]
+                    reward_trend = np.mean(recent_rewards) - np.mean(old_rewards)
+                    trend_symbol = "↑" if reward_trend > 1 else ("↓" if reward_trend < -1 else "→")
+                    print(f"Reward Trend: {trend_symbol} {reward_trend:+.1f}")
+                
+                # Success indicator
+                if recent_success_rate > 0.8:
+                    print("Status: 🟢 Excellent progress!")
+                elif recent_success_rate > 0.5:
+                    print("Status: 🟡 Good progress, keep going!")
+                elif recent_success_rate > 0.2:
+                    print("Status: 🟠 Some progress, may need tuning")
+                else:
+                    print("Status: 🔴 Struggling, consider adjustments")
+                    
+                print(f"{'='*60}\n")
         
         return True
     
@@ -96,12 +139,12 @@ class ManualProgressCallback(BaseCallback):
             print(f"{'='*60}\n")
 
 
-def create_env(env_name: str, curriculum_level: int, seed: int = 0):
+def create_env(env_name: str, curriculum_level: int, seed: int = 0, render: bool = False):
     """Create environment with curriculum level."""
     def _init():
         env = gym.make(
             env_name,
-            render_mode=ENV_CONFIG["render_mode"],
+            render_mode="human" if render else None,
             use_dense_reward=ENV_CONFIG["use_dense_reward"],
             curriculum_level=curriculum_level
         )
@@ -116,6 +159,7 @@ def create_env(env_name: str, curriculum_level: int, seed: int = 0):
 def train_level_manual(args):
     """Manual training function - train one level at a time."""
     
+    start_time = time.time()  # Track training duration
     level = args.level
     print(f"\n{'='*60}")
     print(f"Manual PPO Training for {args.env}")
@@ -124,7 +168,7 @@ def train_level_manual(args):
     print(f"{'='*60}\n")
     
     # Create environment
-    env = DummyVecEnv([create_env(args.env, level, seed=i) for i in range(1)])
+    env = DummyVecEnv([create_env(args.env, level, seed=i, render=args.render) for i in range(1)])
     env = VecMonitor(env)
     
     # Get PPO parameters for current level
@@ -166,8 +210,25 @@ def train_level_manual(args):
     try:
         total_timesteps = get_max_timesteps(level) if args.timesteps is None else args.timesteps
         
-        print(f"\nTraining for {total_timesteps} timesteps...")
-        print(f"PPO Parameters: {ppo_params}\n")
+        # Print comprehensive training configuration
+        print(f"\n{'─'*60}")
+        print(f"TRAINING CONFIGURATION")
+        print(f"{'─'*60}")
+        print(f"Environment: {args.env}")
+        print(f"Curriculum Level: {level} - {get_level_config(level)['name']}")
+        print(f"Total Timesteps: {total_timesteps:,}")
+        print(f"Max Episode Steps: {get_level_config(level).get('max_episode_steps', 'default')}")
+        print(f"Rendering: {'Enabled' if args.render else 'Disabled'}")
+        print(f"Dense Rewards: {ENV_CONFIG['use_dense_reward']}")
+        print(f"Early Exit: {ENV_CONFIG['early_exit_enabled']}")
+        print(f"{'─'*60}")
+        print(f"PPO HYPERPARAMETERS")
+        print(f"{'─'*60}")
+        for key, value in ppo_params.items():
+            print(f"  {key}: {value}")
+        print(f"{'─'*60}\n")
+        
+        print(f"Starting training...")
         
         model.learn(
             total_timesteps=total_timesteps,
@@ -192,23 +253,78 @@ def train_level_manual(args):
         )
         print(f"Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}")
         
-        # Save training summary
+        # Calculate additional statistics
+        success_rate = float(progress_callback.success_count / progress_callback.episode_count if progress_callback.episode_count > 0 else 0)
+        avg_episode_length = float(np.mean(progress_callback.episode_lengths) if progress_callback.episode_lengths else 0)
+        
+        # Save detailed training summary
         training_summary = {
             "level": level,
+            "level_name": get_level_config(level)['name'],
             "run_name": args.run_name,
             "timesteps_trained": total_timesteps,
+            "training_time_seconds": time.time() - start_time,
             "final_mean_reward": float(mean_reward),
             "final_std_reward": float(std_reward),
             "total_episodes": progress_callback.episode_count,
-            "success_rate": float(progress_callback.success_count / progress_callback.episode_count if progress_callback.episode_count > 0 else 0),
-            "avg_episode_length": float(np.mean(progress_callback.episode_lengths) if progress_callback.episode_lengths else 0),
+            "success_count": progress_callback.success_count,
+            "success_rate": success_rate,
+            "avg_episode_length": avg_episode_length,
+            "avg_reward_all_episodes": float(np.mean(progress_callback.episode_rewards)) if progress_callback.episode_rewards else 0,
+            "reward_improvement": float(progress_callback.episode_rewards[-1] - progress_callback.episode_rewards[0]) if len(progress_callback.episode_rewards) > 1 else 0,
             "ppo_params": ppo_params,
+            "environment_config": {
+                "use_dense_reward": ENV_CONFIG["use_dense_reward"],
+                "early_exit_enabled": ENV_CONFIG["early_exit_enabled"],
+                "max_episode_steps": get_level_config(level).get('max_episode_steps', 'default')
+            }
         }
         
+        # Save JSON summary
         summary_path = os.path.join(args.log_save_path, f"training_summary_level_{level}.json")
         with open(summary_path, 'w') as f:
             json.dump(training_summary, f, indent=2)
         print(f"Training summary saved to {summary_path}")
+        
+        # Create human-readable training report
+        report_path = os.path.join(args.log_save_path, f"training_report_level_{level}.txt")
+        with open(report_path, 'w') as f:
+            f.write(f"{'='*60}\n")
+            f.write(f"PPO CURRICULUM TRAINING REPORT\n")
+            f.write(f"Level {level}: {get_level_config(level)['name']}\n")
+            f.write(f"Run: {args.run_name}\n")
+            f.write(f"{'='*60}\n\n")
+            
+            f.write(f"TRAINING RESULTS:\n")
+            f.write(f"  Total Timesteps: {total_timesteps:,}\n")
+            f.write(f"  Total Episodes: {progress_callback.episode_count}\n")
+            f.write(f"  Training Time: {(time.time() - start_time)/60:.1f} minutes\n")
+            f.write(f"  Success Rate: {success_rate:.1%} ({progress_callback.success_count}/{progress_callback.episode_count})\n")
+            f.write(f"  Final Mean Reward: {mean_reward:.2f} ± {std_reward:.2f}\n")
+            f.write(f"  Average Episode Length: {avg_episode_length:.1f} steps\n\n")
+            
+            f.write(f"HYPERPARAMETERS:\n")
+            for key, value in ppo_params.items():
+                f.write(f"  {key}: {value}\n")
+            f.write(f"\n")
+            
+            f.write(f"RECOMMENDATION:\n")
+            if success_rate >= 0.8:
+                f.write(f"  ✓ Success rate is excellent ({success_rate:.1%})! Ready to advance to next level.\n")
+            elif success_rate >= 0.5:
+                f.write(f"  ⚠ Success rate is moderate ({success_rate:.1%}). Consider more training or tuning.\n")
+            else:
+                f.write(f"  ✗ Success rate is low ({success_rate:.1%}). Needs significant improvement.\n")
+            
+            f.write(f"\nNEXT STEPS:\n")
+            if level < 4:
+                f.write(f"  To train Level {level+1}, run:\n")
+                f.write(f"  docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level {level+1} --model-path {final_model_path}\n")
+            else:
+                f.write(f"  Training complete! Evaluate the final model:\n")
+                f.write(f"  docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py --run-name {args.run_name} --render\n")
+                
+        print(f"\nDetailed training report saved to {report_path}")
         
     except KeyboardInterrupt:
         print("\nTraining interrupted by user")
@@ -333,6 +449,12 @@ def main():
         type=str,
         default=None,
         help="Optional tag to append to auto-generated run name"
+    )
+    
+    parser.add_argument(
+        "--render",
+        action="store_true",
+        help="Enable rendering during training"
     )
     
     args = parser.parse_args()

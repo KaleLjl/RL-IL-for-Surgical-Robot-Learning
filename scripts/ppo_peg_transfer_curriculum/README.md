@@ -28,6 +28,7 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_pe
 - `--run-tag`: Tag to add to the auto-generated run name
 - `--run-name`: Custom run name (instead of auto-generated)
 - `--reset-timesteps`: Reset the timestep counter when loading a model
+- `--render`: Enable visualization during training (opens PyBullet window)
 
 ### 3. Directory Structure
 
@@ -96,6 +97,9 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_pe
 # 1. Start with Level 1
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 1 --timesteps 100000 --run-tag experiment1
 
+# 1a. Train with visualization (useful for debugging)
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 1 --timesteps 100000 --run-tag experiment1_visual --render
+
 # 2. Check the success rate in the output. If good (>80%), move to Level 2
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 2 --model-path models/ppo_curriculum/runs/run_XXXXXXXX_experiment1/model_level_1_final.zip --timesteps 150000 --run-tag experiment1
 
@@ -114,6 +118,7 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_pe
 3. **Save Interrupted Models**: If you interrupt training with Ctrl+C, the model is still saved
 4. **Experiment with Hyperparameters**: Edit `curriculum_config.py` to try different settings
 5. **Use Meaningful Tags**: Use descriptive run tags to organize experiments
+6. **Visual Debugging**: Use `--render` flag to watch training in real-time (slower but helpful for debugging)
 
 ## Configuration
 
