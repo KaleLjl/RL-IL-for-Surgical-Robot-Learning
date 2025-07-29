@@ -578,10 +578,13 @@ class PegTransferEnv(DVRKEnv):
     def _get_reward(self, obs: dict) -> float:
         """
         Calculates the reward based on the current observation.
-        For curriculum learning, always use sparse rewards.
+        Level 1 uses dense rewards for better learning, others use sparse rewards.
         """
-        if self.curriculum_level < 4 or not self.use_dense_reward:
-            # Always use sparse rewards for curriculum levels 1-3
+        if self.curriculum_level == 1:
+            # Level 1 always uses dense rewards for better learning
+            return self._get_level_1_dense_reward(obs)
+        elif self.curriculum_level < 4 or not self.use_dense_reward:
+            # Levels 2-3 use sparse rewards, Level 4 can use dense if enabled
             return self._get_sparse_reward(obs)
         else:
             # Level 4 can use dense rewards if enabled
@@ -643,6 +646,48 @@ class PegTransferEnv(DVRKEnv):
             reward += 5.0 * progress * 0.1  # Scaled down to 0.5 max per step
         
         return reward
+
+    def _get_level_1_dense_reward(self, obs: dict) -> float:
+        """
+        Dense reward specifically designed for Level 1: Precise Approach.
+        Provides continuous guidance to help the agent learn positioning and stability.
+        """
+        # Success bonus - big reward for completing the level
+        if self._is_success(obs):
+            return 10.0
+        
+        # Get current state
+        eef_pos = obs['observation'][:3]
+        obj_pos = obs['achieved_goal']
+        distance = np.linalg.norm(eef_pos - obj_pos)
+        
+        # 1. Distance-based reward (0-5.0) - primary learning signal
+        # Reward decreases linearly with distance
+        max_distance = 0.3 * self.SCALING  # Maximum meaningful distance (scaled)
+        distance_normalized = min(distance / max_distance, 1.0)  # Clamp to [0,1]
+        distance_reward = (1.0 - distance_normalized) * 5.0
+        
+        # 2. Precision bonus for being within the success threshold
+        precision_bonus = 0.0
+        approach_threshold = 0.01 * self.SCALING  # 1cm in scaled units
+        
+        if distance < approach_threshold:
+            # Base precision bonus for being in the "success zone"
+            precision_bonus = 2.0
+            
+            # 3. Stability bonus - reward increases with consecutive stable steps
+            # This encourages the agent to maintain position, not just touch and leave
+            stability_bonus = min(self._approach_stable_steps * 0.5, 2.5)  # Max 2.5 at 5 steps
+            precision_bonus += stability_bonus
+        
+        # 4. Small step penalty to encourage efficiency
+        step_penalty = -0.01
+        
+        # Combine all components
+        total_reward = distance_reward + precision_bonus + step_penalty
+        
+        # Ensure reward is not too negative (only step penalty can make it negative)
+        return max(total_reward, step_penalty)
 
     def _update_early_exit_tracking(self, action: np.ndarray):
         """Update tracking variables for early exit conditions."""
