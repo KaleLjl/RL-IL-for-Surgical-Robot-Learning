@@ -65,28 +65,28 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev tensorboard --logdir l
 ### 5. Evaluate Models
 
 ```bash
-# Evaluate a specific run (will find models for all levels in that run)
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py --run-name run_20250729_143022_level1_baseline
+# Evaluate a specific model (level auto-detected from filename)
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py models/ppo_curriculum/runs/run_20250729_143022_level1_baseline/model_level_1_final.zip
 
-# Evaluate specific model file with visualization
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py --model-path models/ppo_curriculum/runs/run_20250729_143022_level1_baseline/model_level_1_final.zip --level 1 --render --episodes 10
+# Evaluate with visualization (10 episodes for quick testing)
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py models/ppo_curriculum/runs/run_20250729_143022_level1_baseline/model_level_1_final.zip --render --episodes 10
 
-# Cross-level evaluation (test how well each level performs on all levels)
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py --run-name run_20250729_143022_level1_baseline --cross-eval --episodes 50
-
-# List available runs to evaluate
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py
+# Override level detection manually
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py models/ppo_curriculum/runs/run_20250729_143022_level1_baseline/model_level_1_final.zip --level 2
 ```
 
-#### Evaluation Options
+#### Evaluation Options (Super Simple)
 
-- `--run-name`: Evaluate all models in a specific training run
-- `--model-path`: Evaluate a specific model file
-- `--level`: Specify which curriculum level to test on (1-4)
-- `--render`: Enable visual rendering during evaluation
-- `--episodes`: Number of episodes to evaluate (default: 100)
-- `--cross-eval`: Test each level's model on all curriculum levels
-- `--save-dir`: Custom directory for results (auto-generated if not specified)
+- `model_path`: **Required.** Path to the model file
+- `--level`: Override auto-detected level (1-4)
+- `--episodes`: Number of test episodes (default: 50)
+- `--render`: Show visualization during evaluation
+
+The script will:
+1. Auto-detect the curriculum level from the filename
+2. Test the model on that level
+3. Print success rate and average reward
+4. Save results as JSON file next to the model
 
 ## Advantages of Manual Training
 
@@ -118,11 +118,12 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_pe
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 2 --model-path models/ppo_curriculum/runs/run_XXXXXXXX_experiment1/model_level_1_final.zip --timesteps 150000
 
 # 3. Continue this pattern through all levels
-# 4. Compare different runs
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/compare_curriculum_runs.py
 
-# 5. Test final model with visualization
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py --run-name run_XXXXXXXX_experiment1 --level 4 --render --episodes 10
+# 4. Evaluate the final model
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py models/ppo_curriculum/runs/run_XXXXXXXX_experiment1/model_level_4_final.zip
+
+# 5. Test with visualization
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py models/ppo_curriculum/runs/run_XXXXXXXX_experiment1/model_level_4_final.zip --render --episodes 10
 ```
 
 ## Training Tips
