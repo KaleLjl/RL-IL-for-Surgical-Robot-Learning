@@ -9,6 +9,8 @@ import os
 import sys
 import time
 import argparse
+import json
+import platform
 from datetime import datetime
 
 import gymnasium as gym
@@ -27,28 +29,24 @@ import dvrk_gym
 from dvrk_gym.utils.wrappers import FlattenDictObsWrapper
 
 # Import from current directory since we're in the ppo_peg_transfer_curriculum folder
-from curriculum_manager import CurriculumManager
 from curriculum_config import (
     get_level_config, get_ppo_params, get_max_timesteps,
-    ENV_CONFIG, TRAINING_CONFIG
+    ENV_CONFIG, TRAINING_CONFIG, CURRICULUM_LEVELS
 )
 
 
-class CurriculumCallback(BaseCallback):
-    """Custom callback for curriculum learning management."""
+class ManualProgressCallback(BaseCallback):
+    """Simple callback for manual curriculum learning - just tracks progress."""
     
     def __init__(self, 
-                 curriculum_manager: CurriculumManager,
-                 env_name: str,
-                 save_path: str,
+                 level: int,
                  verbose: int = 1):
         super().__init__(verbose)
-        self.curriculum_manager = curriculum_manager
-        self.env_name = env_name
-        self.save_path = save_path
+        self.level = level
+        self.episode_count = 0
+        self.success_count = 0
         self.episode_rewards = []
         self.episode_lengths = []
-        self.episode_successes = []
         
     def _on_step(self) -> bool:
         # Check if episode ended
@@ -60,63 +58,42 @@ class CurriculumCallback(BaseCallback):
             episode_length = self.locals.get("episode_lengths")[0] if "episode_lengths" in self.locals else 0
             success = info.get("is_success", False)
             
-            self.curriculum_manager.add_episode_result(
-                success=success,
-                episode_length=episode_length,
-                episode_reward=episode_reward,
-                info={"early_exit": info.get("early_exit", False)}
-            )
+            self.episode_count += 1
+            if success:
+                self.success_count += 1
+            self.episode_rewards.append(episode_reward)
+            self.episode_lengths.append(episode_length)
             
             # Print progress every 100 episodes
-            if self.curriculum_manager.state["total_episodes"] % 100 == 0:
-                self.curriculum_manager.print_progress()
-            
-            # Check for level advancement
-            if self.curriculum_manager.should_advance_level():
-                current_level = self.curriculum_manager.get_current_level()
+            if self.episode_count % 100 == 0:
+                success_rate = self.success_count / self.episode_count
+                avg_reward = np.mean(self.episode_rewards[-100:])
+                avg_length = np.mean(self.episode_lengths[-100:])
                 
-                # Save current model
-                model_path = os.path.join(
-                    self.save_path, 
-                    f"ppo_curriculum_level_{current_level}_final.zip"
-                )
-                self.model.save(model_path)
-                
-                # Advance to next level
-                new_level = self.curriculum_manager.advance_level(model_path)
-                
-                # Update environment for new level
-                self._update_environment_level(new_level)
-                
-                # Optionally update hyperparameters for new level
-                # Note: This is tricky with SB3, might need to recreate model
-                
-                # Save curriculum state
-                self.curriculum_manager.save_state()
+                print(f"\n--- Level {self.level} Progress Report ---")
+                print(f"Episodes: {self.episode_count}")
+                print(f"Success Rate: {success_rate:.1%} ({self.success_count}/{self.episode_count})")
+                print(f"Recent Avg Reward: {avg_reward:.2f}")
+                print(f"Recent Avg Length: {avg_length:.1f}")
+                print("-" * 40)
         
         return True
     
-    def _update_environment_level(self, new_level: int):
-        """Update environment to new curriculum level."""
-        # This is a bit hacky but works for our purposes
-        # We need to update the curriculum_level in all environments
-        
-        # For DummyVecEnv, we can access the environments directly
-        if hasattr(self.training_env, 'envs'):
-            for env in self.training_env.envs:
-                # Navigate through wrappers to get to the base environment
-                base_env = env
-                while hasattr(base_env, 'env'):
-                    base_env = base_env.env
-                
-                if hasattr(base_env, 'curriculum_level'):
-                    base_env.curriculum_level = new_level
-                    print(f"Updated environment to curriculum level {new_level}")
-    
     def _on_training_end(self) -> None:
-        """Save final state when training ends."""
-        self.curriculum_manager.save_state()
-        print(self.curriculum_manager.get_stats_summary())
+        """Print final statistics."""
+        if self.episode_count > 0:
+            success_rate = self.success_count / self.episode_count
+            avg_reward = np.mean(self.episode_rewards) if self.episode_rewards else 0
+            avg_length = np.mean(self.episode_lengths) if self.episode_lengths else 0
+            
+            print(f"\n{'='*60}")
+            print(f"FINAL LEVEL {self.level} STATISTICS")
+            print(f"{'='*60}")
+            print(f"Total Episodes: {self.episode_count}")
+            print(f"Overall Success Rate: {success_rate:.1%}")
+            print(f"Average Reward: {avg_reward:.2f}")
+            print(f"Average Episode Length: {avg_length:.1f}")
+            print(f"{'='*60}\n")
 
 
 def create_env(env_name: str, curriculum_level: int, seed: int = 0):
@@ -137,86 +114,58 @@ def create_env(env_name: str, curriculum_level: int, seed: int = 0):
     return _init
 
 
-def train_curriculum(args):
-    """Main training function for curriculum learning."""
+def train_level_manual(args):
+    """Manual training function - train one level at a time."""
     
-    # Initialize curriculum manager
-    if args.resume:
-        curriculum_state_path = os.path.join(args.save_path, "curriculum_state.json")
-        if os.path.exists(curriculum_state_path):
-            curriculum_manager = CurriculumManager(
-                save_path=args.save_path,
-                resume_from_file=curriculum_state_path
-            )
-            start_level = curriculum_manager.get_current_level()
-            print(f"Resuming from curriculum level {start_level}")
-        else:
-            print(f"No saved state found at {curriculum_state_path}, starting fresh")
-            curriculum_manager = CurriculumManager(save_path=args.save_path)
-            start_level = args.start_level
-    else:
-        curriculum_manager = CurriculumManager(save_path=args.save_path)
-        start_level = args.start_level
-        if start_level != 1:
-            # Manually set starting level if not 1
-            curriculum_manager.state["current_level"] = start_level
-    
+    level = args.level
     print(f"\n{'='*60}")
-    print(f"Starting PPO Curriculum Learning for {args.env}")
-    print(f"Initial Level: {start_level} - {get_level_config(start_level)['name']}")
+    print(f"Manual PPO Training for {args.env}")
+    print(f"Level: {level} - {get_level_config(level)['name']}")
+    print(f"Run: {args.run_name}")
     print(f"{'='*60}\n")
     
     # Create environment
-    env = DummyVecEnv([create_env(args.env, start_level, seed=i) for i in range(1)])
+    env = DummyVecEnv([create_env(args.env, level, seed=i) for i in range(1)])
     env = VecMonitor(env)
     
     # Get PPO parameters for current level
-    ppo_params = get_ppo_params(start_level)
+    ppo_params = get_ppo_params(level)
     
     # Initialize or load model
-    if args.resume and args.model_path and os.path.exists(args.model_path):
+    if args.model_path and os.path.exists(args.model_path):
         print(f"Loading model from {args.model_path}")
         model = PPO.load(args.model_path, env=env, **ppo_params)
-    elif start_level > 1 and args.previous_model:
-        # Load model from previous level
-        print(f"Loading model from previous level: {args.previous_model}")
-        model = PPO.load(args.previous_model, env=env, **ppo_params)
     else:
         # Create new model
         print("Creating new PPO model")
         model = PPO(
             "MlpPolicy",
             env,
-            tensorboard_log=os.path.join(args.save_path, "tensorboard"),
+            tensorboard_log=os.path.join(args.log_save_path, "tensorboard"),
             **ppo_params
         )
     
     # Setup callbacks
     callbacks = []
     
-    # Curriculum callback
-    curriculum_callback = CurriculumCallback(
-        curriculum_manager=curriculum_manager,
-        env_name=args.env,
-        save_path=args.save_path,
-        verbose=1
-    )
-    callbacks.append(curriculum_callback)
+    # Progress tracking callback
+    progress_callback = ManualProgressCallback(level=level, verbose=1)
+    callbacks.append(progress_callback)
     
-    # Checkpoint callback
+    # Checkpoint callback - save to run directory
     checkpoint_callback = CheckpointCallback(
         save_freq=TRAINING_CONFIG["checkpoint_frequency"],
-        save_path=args.save_path,
-        name_prefix=f"ppo_curriculum_level_{start_level}"
+        save_path=os.path.join(args.model_save_path, "checkpoints"),
+        name_prefix=f"ppo_level_{level}"
     )
     callbacks.append(checkpoint_callback)
     
     # Combine callbacks
     callback = CallbackList(callbacks)
     
-    # Train for current level
+    # Train
     try:
-        total_timesteps = get_max_timesteps(start_level) if args.timesteps is None else args.timesteps
+        total_timesteps = get_max_timesteps(level) if args.timesteps is None else args.timesteps
         
         print(f"\nTraining for {total_timesteps} timesteps...")
         print(f"PPO Parameters: {ppo_params}\n")
@@ -224,25 +173,18 @@ def train_curriculum(args):
         model.learn(
             total_timesteps=total_timesteps,
             callback=callback,
-            reset_num_timesteps=False,
-            progress_bar=True
+            reset_num_timesteps=not args.reset_timesteps,
+            progress_bar=True,
+            tb_log_name=f"level_{level}"
         )
         
         # Save final model
         final_model_path = os.path.join(
-            args.save_path,
-            f"ppo_curriculum_level_{curriculum_manager.get_current_level()}_final.zip"
+            args.model_save_path,
+            f"model_level_{level}_final.zip"
         )
         model.save(final_model_path)
         print(f"\nFinal model saved to {final_model_path}")
-        
-    except KeyboardInterrupt:
-        print("\nTraining interrupted by user")
-        
-    finally:
-        # Save curriculum state
-        curriculum_manager.save_state()
-        print(curriculum_manager.get_stats_summary())
         
         # Final evaluation
         print("\nFinal evaluation...")
@@ -250,13 +192,86 @@ def train_curriculum(args):
             model, env, n_eval_episodes=100, deterministic=True
         )
         print(f"Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}")
+        
+        # Save training summary
+        training_summary = {
+            "level": level,
+            "run_name": args.run_name,
+            "timesteps_trained": total_timesteps,
+            "final_mean_reward": mean_reward,
+            "final_std_reward": std_reward,
+            "total_episodes": progress_callback.episode_count,
+            "success_rate": progress_callback.success_count / progress_callback.episode_count if progress_callback.episode_count > 0 else 0,
+            "avg_episode_length": np.mean(progress_callback.episode_lengths) if progress_callback.episode_lengths else 0,
+            "ppo_params": ppo_params,
+        }
+        
+        summary_path = os.path.join(args.log_save_path, f"training_summary_level_{level}.json")
+        with open(summary_path, 'w') as f:
+            json.dump(training_summary, f, indent=2)
+        print(f"Training summary saved to {summary_path}")
+        
+    except KeyboardInterrupt:
+        print("\nTraining interrupted by user")
+        # Still save the model if interrupted
+        interrupted_model_path = os.path.join(
+            args.model_save_path,
+            f"model_level_{level}_interrupted.zip"
+        )
+        model.save(interrupted_model_path)
+        print(f"Interrupted model saved to {interrupted_model_path}")
     
     env.close()
 
 
+def generate_run_name(tag: str = None) -> str:
+    """Generate a unique run name with timestamp and optional tag."""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_name = f"run_{timestamp}"
+    if tag:
+        run_name += f"_{tag}"
+    return run_name
+
+
+def save_run_metadata(run_dir: str, args, run_name: str):
+    """Save comprehensive metadata about the training run."""
+    metadata = {
+        "run_name": run_name,
+        "start_time": datetime.now().isoformat(),
+        "environment": args.env,
+        "curriculum_config": CURRICULUM_LEVELS,
+        "env_config": ENV_CONFIG,
+        "training_config": TRAINING_CONFIG,
+        "system_info": {
+            "python_version": platform.python_version(),
+            "platform": platform.platform(),
+            "processor": platform.processor(),
+        },
+        "command_args": vars(args),
+        "command": " ".join(sys.argv),
+    }
+    
+    # Try to get GPU info if available
+    try:
+        import torch
+        if torch.cuda.is_available():
+            metadata["system_info"]["gpu"] = torch.cuda.get_device_name(0)
+            metadata["system_info"]["cuda_version"] = torch.version.cuda
+    except ImportError:
+        pass
+    
+    metadata_path = os.path.join(run_dir, "metadata.json")
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    
+    print(f"Run metadata saved to {metadata_path}")
+
+
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Train PPO with Curriculum Learning on PegTransfer"
+        description="Manual PPO Training for Curriculum Learning Levels"
     )
     
     parser.add_argument(
@@ -266,11 +281,11 @@ def main():
     )
     
     parser.add_argument(
-        "--start-level",
+        "--level",
         type=int,
-        default=1,
+        required=True,
         choices=[1, 2, 3, 4],
-        help="Starting curriculum level (1-4)"
+        help="Curriculum level to train (1-4)"
     )
     
     parser.add_argument(
@@ -281,39 +296,80 @@ def main():
     )
     
     parser.add_argument(
-        "--resume",
-        action="store_true",
-        help="Resume from saved curriculum state"
-    )
-    
-    parser.add_argument(
         "--model-path",
         type=str,
         default=None,
-        help="Path to saved model to resume from"
+        help="Path to saved model to continue training from"
     )
     
     parser.add_argument(
-        "--previous-model",
+        "--reset-timesteps",
+        action="store_true",
+        help="Reset timestep counter when loading a model (default: continue counting)"
+    )
+    
+    parser.add_argument(
+        "--base-model-dir",
+        type=str,
+        default="models/ppo_curriculum",
+        help="Base directory for saving models"
+    )
+    
+    parser.add_argument(
+        "--base-log-dir",
+        type=str,
+        default="logs/ppo_curriculum",
+        help="Base directory for saving logs"
+    )
+    
+    parser.add_argument(
+        "--run-name",
         type=str,
         default=None,
-        help="Path to model from previous curriculum level"
+        help="Name for this run (auto-generated if not provided)"
     )
     
     parser.add_argument(
-        "--save-path",
+        "--run-tag",
         type=str,
-        default="models/ppo_curriculum/",
-        help="Path to save models and logs"
+        default=None,
+        help="Optional tag to append to auto-generated run name"
     )
     
     args = parser.parse_args()
     
-    # Create save directory
-    os.makedirs(args.save_path, exist_ok=True)
+    # Generate run name if not provided
+    if args.run_name:
+        run_name = args.run_name
+    else:
+        run_name = generate_run_name(args.run_tag)
     
-    # Train
-    train_curriculum(args)
+    print(f"\n{'='*60}")
+    print(f"Manual PPO Curriculum Training")
+    print(f"Run Name: {run_name}")
+    print(f"Level: {args.level}")
+    print(f"{'='*60}\n")
+    
+    # Setup directory structure - always create new directories for each training session
+    model_run_dir = os.path.join(args.base_model_dir, "runs", run_name)
+    log_run_dir = os.path.join(args.base_log_dir, "runs", run_name)
+    
+    # Create directories
+    os.makedirs(model_run_dir, exist_ok=True)
+    os.makedirs(log_run_dir, exist_ok=True)
+    os.makedirs(os.path.join(model_run_dir, "checkpoints"), exist_ok=True)
+    os.makedirs(os.path.join(log_run_dir, "tensorboard"), exist_ok=True)
+    
+    # Save metadata for this training session
+    save_run_metadata(model_run_dir, args, run_name)
+    
+    # Update args with paths
+    args.model_save_path = model_run_dir
+    args.log_save_path = log_run_dir
+    args.run_name = run_name
+    
+    # Train the specified level
+    train_level_manual(args)
 
 
 if __name__ == "__main__":

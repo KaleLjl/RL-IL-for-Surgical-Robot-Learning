@@ -341,7 +341,27 @@ def main():
     parser.add_argument(
         "--model-dir",
         default="models/ppo_curriculum/",
-        help="Directory containing trained models"
+        help="Directory containing trained models (deprecated, use --run-name)"
+    )
+    
+    parser.add_argument(
+        "--run-name",
+        type=str,
+        help="Name of the training run to evaluate"
+    )
+    
+    parser.add_argument(
+        "--base-model-dir",
+        type=str,
+        default="models/ppo_curriculum",
+        help="Base directory containing model runs"
+    )
+    
+    parser.add_argument(
+        "--base-results-dir",
+        type=str,
+        default="results/ppo_curriculum",
+        help="Base directory for saving results"
     )
     
     parser.add_argument(
@@ -378,14 +398,48 @@ def main():
     
     parser.add_argument(
         "--save-dir",
-        default="results/ppo_curriculum/",
-        help="Directory to save results"
+        default=None,
+        help="Directory to save results (auto-generated if not specified)"
     )
     
     args = parser.parse_args()
     
-    # Create save directory
-    os.makedirs(args.save_dir, exist_ok=True)
+    # Determine run to evaluate
+    if args.run_name:
+        run_name = args.run_name
+        model_run_dir = os.path.join(args.base_model_dir, "runs", run_name)
+        if not os.path.exists(model_run_dir):
+            raise ValueError(f"Run directory not found: {model_run_dir}")
+    elif args.model_path:
+        # Using specific model path
+        run_name = "custom_eval"
+        model_run_dir = None
+    else:
+        # List available runs
+        runs_dir = os.path.join(args.base_model_dir, "runs")
+        if os.path.exists(runs_dir):
+            available_runs = [d for d in os.listdir(runs_dir) 
+                            if os.path.isdir(os.path.join(runs_dir, d))]
+            if available_runs:
+                print("Available runs to evaluate:")
+                for run in sorted(available_runs):
+                    print(f"  - {run}")
+                print("\nPlease specify --run-name to evaluate a specific run")
+                return
+            else:
+                print("No runs found in", runs_dir)
+                return
+        else:
+            print("No runs directory found")
+            return
+    
+    # Setup save directory
+    if args.save_dir:
+        save_dir = args.save_dir
+    else:
+        save_dir = os.path.join(args.base_results_dir, "runs", run_name)
+    os.makedirs(save_dir, exist_ok=True)
+    print(f"Results will be saved to: {save_dir}")
     
     # Find model paths
     model_paths = {}
@@ -393,21 +447,23 @@ def main():
     if args.model_path and args.level:
         # Specific model provided
         model_paths[args.level] = args.model_path
-    else:
-        # Search for models in directory
+    elif model_run_dir:
+        # Search for models in run directory (new manual training structure)
         for level in range(1, 5):
-            model_name = f"ppo_curriculum_level_{level}_final.zip"
-            model_path = os.path.join(args.model_dir, model_name)
+            # Look for level-specific final models
+            model_path = os.path.join(model_run_dir, f"model_level_{level}_final.zip")
             if os.path.exists(model_path):
                 model_paths[level] = model_path
             else:
                 # Try to find checkpoint
                 import glob
-                pattern = os.path.join(args.model_dir, f"ppo_curriculum_level_{level}_*.zip")
-                matches = glob.glob(pattern)
-                if matches:
-                    # Use the latest checkpoint
-                    model_paths[level] = sorted(matches)[-1]
+                checkpoint_dir = os.path.join(model_run_dir, "checkpoints")
+                if os.path.exists(checkpoint_dir):
+                    pattern = os.path.join(checkpoint_dir, f"ppo_level_{level}_*.zip")
+                    matches = glob.glob(pattern)
+                    if matches:
+                        # Use the latest checkpoint
+                        model_paths[level] = sorted(matches)[-1]
     
     if not model_paths:
         print("No models found to evaluate!")
@@ -425,7 +481,7 @@ def main():
         generate_performance_matrix(cross_results)
         
         # Save cross-evaluation results
-        cross_save_path = os.path.join(args.save_dir, "cross_evaluation_results.json")
+        cross_save_path = os.path.join(save_dir, "cross_evaluation_results.json")
         with open(cross_save_path, 'w') as f:
             json.dump(cross_results, f, indent=2)
         
@@ -454,12 +510,14 @@ def main():
                     all_results[level][level] = result
         
         # Generate report
-        report_path = os.path.join(args.save_dir, "evaluation_report.json")
+        report_path = os.path.join(save_dir, "evaluation_report.json")
         generate_report(all_results, report_path)
         
         # Plot results
         if len(all_results) > 1:
-            plot_path = os.path.join(args.save_dir, "curriculum_performance.png")
+            plot_save_dir = os.path.join(save_dir, "plots")
+            os.makedirs(plot_save_dir, exist_ok=True)
+            plot_path = os.path.join(plot_save_dir, "curriculum_performance.png")
             plot_learning_curves(all_results, plot_path)
 
 
