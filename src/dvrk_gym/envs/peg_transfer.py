@@ -641,14 +641,7 @@ class PegTransferEnv(DVRKEnv):
         """
         # Pure distance penalty like NeedleReach - no success bonus
         distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
-        reward = -distance
-        
-        # Small penalty for opening gripper (Level 1 should keep gripper closed)
-        jaw_angle = obs['observation'][6]  # Current jaw angle
-        target_jaw_angle = np.deg2rad(-40)  # Closed position (negative angle)
-        gripper_penalty = -0.1 * abs(jaw_angle - target_jaw_angle)
-        
-        return reward + gripper_penalty
+        return -distance
 
 
     def _get_obs_robot_state(self):
