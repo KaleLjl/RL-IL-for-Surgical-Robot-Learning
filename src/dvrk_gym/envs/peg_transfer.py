@@ -153,9 +153,15 @@ class PegTransferEnv(DVRKEnv):
     def _get_obs(self) -> dict:
         robot_state = self._get_obs_robot_state().astype(np.float32)
         
-        # Get object position (the red block) - this is what we want to move to the goal
-        obj_pos, _ = get_body_pose(self.obj_id)
-        achieved_goal = np.array(obj_pos, dtype=np.float32)
+        # For Level 1: Use EEF position as achieved_goal (like NeedleReach)
+        # For higher levels: Use object position as achieved_goal
+        if self.curriculum_level == 1:
+            eef_pos, _ = get_link_pose(self.psm1.body, self.psm1.EEF_LINK_INDEX)
+            achieved_goal = np.array(eef_pos, dtype=np.float32)
+        else:
+            # Get object position (the red block) - this is what we want to move to the goal
+            obj_pos, _ = get_body_pose(self.obj_id)
+            achieved_goal = np.array(obj_pos, dtype=np.float32)
         
         return {
             'observation': robot_state,
@@ -166,9 +172,14 @@ class PegTransferEnv(DVRKEnv):
     def _sample_goal(self) -> np.ndarray:
         """ Samples a new goal and returns it, aligned with SurRoL.
         """
-        # Goal is the position of the first peg (destination)
-        goal_pos, _ = get_link_pose(self.peg_board_id, self._pegs[0])
-        goal = np.array(goal_pos, dtype=np.float32)
+        if self.curriculum_level == 1:
+            # Level 1: Goal is the object position (EEF should reach object)
+            obj_pos, _ = get_body_pose(self.obj_id)
+            goal = np.array(obj_pos, dtype=np.float32)
+        else:
+            # Higher levels: Goal is the destination peg position
+            goal_pos, _ = get_link_pose(self.peg_board_id, self._pegs[0])
+            goal = np.array(goal_pos, dtype=np.float32)
         return goal.copy()
     
     def reset(self, seed=None, options=None):
@@ -508,13 +519,9 @@ class PegTransferEnv(DVRKEnv):
     
     def _is_level_1_success(self, obs: dict) -> bool:
         """Level 1: Precise approach - simple distance-based success like NeedleReach."""
-        # Check distance to object
-        eef_pos = obs['observation'][:3]
-        obj_pos = obs['achieved_goal']
-        distance = np.linalg.norm(eef_pos - obj_pos)
-        
-        # Simple success condition: just distance threshold (like NeedleReach)
-        return distance < 0.01 * self.SCALING
+        # Match NeedleReach: achieved_goal vs desired_goal
+        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        return distance < self.success_threshold
     
     def _is_level_2_success(self, obs: dict) -> bool:
         """Level 2: Precise grasp - stable constraint creation."""
@@ -629,25 +636,11 @@ class PegTransferEnv(DVRKEnv):
     def _get_level_1_dense_reward(self, obs: dict) -> float:
         """
         Dense reward for Level 1: Simple approach like NeedleReach.
-        Uses smooth, continuous distance-based reward without cliff effects.
+        Pure negative distance reward without success bonus.
         """
-        # Success bonus - big reward for completing the level
-        if self._is_success(obs):
-            return 10.0
-        
-        # Calculate distance
-        eef_pos = obs['observation'][:3]
-        obj_pos = obs['achieved_goal']
-        distance = np.linalg.norm(eef_pos - obj_pos)
-        
-        # Scale distance to reasonable range (workspace is ~0.5 scaled units)
-        # Max expected distance is ~0.5 * SCALING = 2.5
-        # Scale to [-1, 0] range to balance with +10 success bonus
-        max_distance = 0.5 * self.SCALING
-        normalized_distance = min(distance / max_distance, 1.0)
-        
-        # Return scaled negative distance - closer is better
-        return -normalized_distance
+        # Pure distance penalty like NeedleReach - no success bonus
+        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        return -distance
 
 
     def _get_obs_robot_state(self):

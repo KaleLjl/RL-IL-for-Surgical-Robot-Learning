@@ -22,9 +22,9 @@ CURRICULUM_LEVELS = {
             "evaluation_window": 100,       # Last N episodes for success rate
         },
         "ppo_params": {
-            "learning_rate": 1e-4,  # Reduced from 3e-4 for more stable learning
-            "n_steps": 2048,        # Increased from 1024 for better value estimates
-            "batch_size": 256,      # Increased from 64 for better gradient estimates
+            "learning_rate": 3e-4,  # Use NeedleReach proven value (was working well)
+            "n_steps": 2048,        # Keep this - works well for both
+            "batch_size": 64,       # Use NeedleReach value (simpler, less overfitting)
             "n_epochs": 10,
             "gamma": 0.99,
             "clip_range": 0.2,
@@ -115,7 +115,7 @@ DEFAULT_PPO_PARAMS = {
     "clip_range": 0.2,
     "clip_range_vf": None,
     "normalize_advantage": True,
-    "ent_coef": 0.01,  # Added entropy for exploration
+    "ent_coef": 0.0,   # Use NeedleReach default (PPO default)
     "vf_coef": 0.5,
     "max_grad_norm": 0.5,
     "target_kl": None,

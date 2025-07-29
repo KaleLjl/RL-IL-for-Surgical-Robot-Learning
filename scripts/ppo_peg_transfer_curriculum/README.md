@@ -8,16 +8,16 @@ This simplified version allows you to manually train each curriculum level indep
 
 ```bash
 # Train Level 1 (Precise Approach)
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 1 --run-tag level1_baseline
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 1
 
 # Train Level 2 (Precise Grasp) - starting from Level 1 model
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 2 --model-path models/ppo_curriculum/runs/run_20250729_143022_level1_baseline/model_level_1_final.zip --run-tag level2_from_level1
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 2 --model-path models/ppo_curriculum/runs/run_20250729_143022_level1_baseline/model_level_1_final.zip
 
 # Train Level 3 (Precise Transport) - starting from Level 2 model
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 3 --model-path models/ppo_curriculum/runs/run_20250729_150000_level2_from_level1/model_level_2_final.zip --run-tag level3_from_level2
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 3 --model-path models/ppo_curriculum/runs/run_20250729_150000_level2_from_level1/model_level_2_final.zip
 
 # Train Level 4 (Full Task) - starting from Level 3 model
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 4 --model-path models/ppo_curriculum/runs/run_20250729_160000_level3_from_level2/model_level_3_final.zip --run-tag level4_final
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 4 --model-path models/ppo_curriculum/runs/run_20250729_160000_level3_from_level2/model_level_3_final.zip
 ```
 
 ### 2. Key Arguments
@@ -25,10 +25,8 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_pe
 - `--level`: **Required.** Which curriculum level to train (1-4)
 - `--model-path`: Path to a saved model to continue training from (optional)
 - `--timesteps`: How many timesteps to train (uses config default if not specified)
-- `--run-tag`: Tag to add to the auto-generated run name
-- `--run-name`: Custom run name (instead of auto-generated)
-- `--reset-timesteps`: Reset the timestep counter when loading a model
 - `--render`: Enable visualization during training (opens PyBullet window)
+- `--env`: Environment name (default: PegTransfer-v0)
 
 ### 3. Directory Structure
 
@@ -95,13 +93,13 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_pe
 
 ```bash
 # 1. Start with Level 1
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 1 --timesteps 100000 --run-tag experiment1
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 1 --timesteps 100000
 
 # 1a. Train with visualization (useful for debugging)
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 1 --timesteps 100000 --run-tag experiment1_visual --render
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 1 --timesteps 100000 --render
 
 # 2. Check the success rate in the output. If good (>80%), move to Level 2
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 2 --model-path models/ppo_curriculum/runs/run_XXXXXXXX_experiment1/model_level_1_final.zip --timesteps 150000 --run-tag experiment1
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 2 --model-path models/ppo_curriculum/runs/run_XXXXXXXX_experiment1/model_level_1_final.zip --timesteps 150000
 
 # 3. Continue this pattern through all levels
 # 4. Compare different runs
@@ -113,12 +111,11 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_pe
 
 ## Training Tips
 
-1. **Monitor Success Rates**: The training will print progress every 100 episodes
+1. **Monitor Success Rates**: The training will print progress every 50 episodes
 2. **Use Different Timesteps**: Some levels may need more training than others
 3. **Save Interrupted Models**: If you interrupt training with Ctrl+C, the model is still saved
 4. **Experiment with Hyperparameters**: Edit `curriculum_config.py` to try different settings
-5. **Use Meaningful Tags**: Use descriptive run tags to organize experiments
-6. **Visual Debugging**: Use `--render` flag to watch training in real-time (slower but helpful for debugging)
+5. **Visual Debugging**: Use `--render` flag to watch training in real-time (slower but helpful for debugging)
 
 ## Configuration
 
