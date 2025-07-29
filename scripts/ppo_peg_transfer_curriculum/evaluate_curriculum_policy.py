@@ -39,7 +39,6 @@ def evaluate_model_on_level(model_path: str, env_name: str, level: int,
         env_name,
         render_mode=render_mode,
         use_dense_reward=False,
-        early_exit_enabled=True,
         curriculum_level=level
     )
     env = FlattenDictObsWrapper(env)

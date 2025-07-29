@@ -635,13 +635,19 @@ class PegTransferEnv(DVRKEnv):
         if self._is_success(obs):
             return 10.0
         
-        # Simple negative distance reward (like NeedleReach)
+        # Calculate distance
         eef_pos = obs['observation'][:3]
         obj_pos = obs['achieved_goal']
         distance = np.linalg.norm(eef_pos - obj_pos)
         
-        # Return negative distance - closer is better (less negative)
-        return -distance
+        # Scale distance to reasonable range (workspace is ~0.5 scaled units)
+        # Max expected distance is ~0.5 * SCALING = 2.5
+        # Scale to [-1, 0] range to balance with +10 success bonus
+        max_distance = 0.5 * self.SCALING
+        normalized_distance = min(distance / max_distance, 1.0)
+        
+        # Return scaled negative distance - closer is better
+        return -normalized_distance
 
 
     def _get_obs_robot_state(self):
