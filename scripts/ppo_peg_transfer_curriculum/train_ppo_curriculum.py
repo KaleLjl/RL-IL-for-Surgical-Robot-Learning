@@ -103,7 +103,6 @@ def create_env(env_name: str, curriculum_level: int, seed: int = 0):
             env_name,
             render_mode=ENV_CONFIG["render_mode"],
             use_dense_reward=ENV_CONFIG["use_dense_reward"],
-            early_exit_enabled=ENV_CONFIG["early_exit_enabled"],
             curriculum_level=curriculum_level
         )
         # Wrap for dict observations

@@ -33,11 +33,10 @@ class PegTransferEnv(DVRKEnv):
     POSE_PSM1 = ((0.05, 0.24, 0.8524), (0, 0, -(90 + 20) / 180 * np.pi))
     DISTANCE_THRESHOLD = 0.005
 
-    def __init__(self, render_mode: str = None, use_dense_reward: bool = False, early_exit_enabled: bool = True, curriculum_level: int = 4):
+    def __init__(self, render_mode: str = None, use_dense_reward: bool = False, curriculum_level: int = 4):
         # Store render_mode and reward setting
         self.render_mode = render_mode
         self.use_dense_reward = use_dense_reward
-        self.early_exit_enabled = early_exit_enabled
         self.curriculum_level = curriculum_level  # 1-4 for different curriculum stages
         
         # Initialize workspace limits (matching SurRoL PsmEnv parent class)
@@ -66,14 +65,8 @@ class PegTransferEnv(DVRKEnv):
         self._contact_achieved = False
         self._grasp_achieved = False
         
-        # Early exit tracking
-        self._contact_timer = 0
-        self._gripper_spam_counter = 0
-        self._had_successful_grasp = False
-        self._last_action_gripper = 0.0
         
         # Curriculum tracking
-        self._approach_stable_steps = 0  # For level 1
         self._grasp_stable_steps = 0     # For level 2
 
     def _env_setup(self):
@@ -187,14 +180,8 @@ class PegTransferEnv(DVRKEnv):
         self._contact_achieved = False
         self._grasp_achieved = False
         
-        # Reset early exit tracking
-        self._contact_timer = 0
-        self._gripper_spam_counter = 0
-        self._had_successful_grasp = False
-        self._last_action_gripper = 0.0
         
         # Reset curriculum tracking
-        self._approach_stable_steps = 0
         self._grasp_stable_steps = 0
         
         # Call parent reset
@@ -325,8 +312,6 @@ class PegTransferEnv(DVRKEnv):
         # Move the robot
         self.psm1.move(action_rcm)
         
-        # Update early exit tracking before gripper handling
-        self._update_early_exit_tracking(action)
         
         # Handle gripper (no blocking - let agent control freely)
         if action[4] < 0:
@@ -522,20 +507,14 @@ class PegTransferEnv(DVRKEnv):
             return self._is_level_4_success(obs)
     
     def _is_level_1_success(self, obs: dict) -> bool:
-        """Level 1: Precise approach - stable positioning near object."""
+        """Level 1: Precise approach - simple distance-based success like NeedleReach."""
         # Check distance to object
         eef_pos = obs['observation'][:3]
         obj_pos = obs['achieved_goal']
         distance = np.linalg.norm(eef_pos - obj_pos)
         
-        # Must be within 1cm for stable approach
-        if distance < 0.01 * self.SCALING:
-            self._approach_stable_steps += 1
-        else:
-            self._approach_stable_steps = 0
-        
-        # Success: stable for 5 consecutive steps
-        return self._approach_stable_steps >= 5
+        # Simple success condition: just distance threshold (like NeedleReach)
+        return distance < 0.01 * self.SCALING
     
     def _is_level_2_success(self, obs: dict) -> bool:
         """Level 2: Precise grasp - stable constraint creation."""
@@ -649,122 +628,21 @@ class PegTransferEnv(DVRKEnv):
 
     def _get_level_1_dense_reward(self, obs: dict) -> float:
         """
-        Dense reward specifically designed for Level 1: Precise Approach.
-        Provides continuous guidance to help the agent learn positioning and stability.
+        Dense reward for Level 1: Simple approach like NeedleReach.
+        Uses smooth, continuous distance-based reward without cliff effects.
         """
         # Success bonus - big reward for completing the level
         if self._is_success(obs):
             return 10.0
         
-        # Get current state
+        # Simple negative distance reward (like NeedleReach)
         eef_pos = obs['observation'][:3]
         obj_pos = obs['achieved_goal']
         distance = np.linalg.norm(eef_pos - obj_pos)
         
-        # 1. Distance-based reward (0-5.0) - primary learning signal
-        # Reward decreases linearly with distance
-        max_distance = 0.3 * self.SCALING  # Maximum meaningful distance (scaled)
-        distance_normalized = min(distance / max_distance, 1.0)  # Clamp to [0,1]
-        distance_reward = (1.0 - distance_normalized) * 5.0
-        
-        # 2. Precision bonus for being within the success threshold
-        precision_bonus = 0.0
-        approach_threshold = 0.01 * self.SCALING  # 1cm in scaled units
-        
-        if distance < approach_threshold:
-            # Base precision bonus for being in the "success zone"
-            precision_bonus = 2.0
-            
-            # 3. Stability bonus - reward increases with consecutive stable steps
-            # This encourages the agent to maintain position, not just touch and leave
-            stability_bonus = min(self._approach_stable_steps * 0.5, 2.5)  # Max 2.5 at 5 steps
-            precision_bonus += stability_bonus
-        
-        # 4. Small step penalty to encourage efficiency
-        step_penalty = -0.01
-        
-        # Combine all components
-        total_reward = distance_reward + precision_bonus + step_penalty
-        
-        # Ensure reward is not too negative (only step penalty can make it negative)
-        return max(total_reward, step_penalty)
+        # Return negative distance - closer is better (less negative)
+        return -distance
 
-    def _update_early_exit_tracking(self, action: np.ndarray):
-        """Update tracking variables for early exit conditions."""
-        if not self.early_exit_enabled:
-            return
-        
-        # Track successful grasp flag
-        is_grasped = self._activated >= 0 and self._contact_constraint is not None
-        if is_grasped and not self._had_successful_grasp:
-            self._had_successful_grasp = True
-        
-        # Track contact timer
-        if self._activated >= 0:
-            self._contact_timer += 1
-        else:
-            self._contact_timer = 0
-        
-        # Track gripper spam (when far from object)
-        tip_pos, _ = get_link_pose(self.psm1.body, self.psm1.TIP_LINK_INDEX)
-        obj_pos, _ = get_body_pose(self.obj_id)
-        distance = np.linalg.norm(np.array(tip_pos) - np.array(obj_pos))
-        
-        # Count as spam if far from object AND gripper action changes
-        if (self._activated < 0 and  # No contact
-            distance > 0.03 * self.SCALING and  # Far from object (>3cm)
-            abs(action[4]) > 0.5):  # Significant gripper action
-            self._gripper_spam_counter += 1
-        else:
-            # Reset counter if doing useful actions
-            self._gripper_spam_counter = max(0, self._gripper_spam_counter - 1)
-        
-        self._last_action_gripper = action[4]
-
-    def _check_early_termination(self) -> bool:
-        """Check if episode should terminate early based on curriculum level."""
-        if not self.early_exit_enabled:
-            return False
-        
-        # Level 1: Terminate if no approach progress
-        if self.curriculum_level == 1:
-            # Early exit if far from object for too long
-            eef_pos = self._get_obs()['observation'][:3]
-            obj_pos = self._get_obs()['achieved_goal']
-            distance = np.linalg.norm(eef_pos - obj_pos)
-            
-            # If still far after 30 steps, terminate
-            if distance > 0.05 * self.SCALING and self._gripper_spam_counter > 30:
-                return True
-        
-        # Level 2: Terminate if no contact progress
-        elif self.curriculum_level == 2:
-            # Early exit if no contact after achieving approach
-            if self._approach_stable_steps >= 5 and self._contact_timer > 40:
-                return True
-        
-        # Level 3 & 4: Full early exit logic
-        else:
-            # Scenario 1: Contact timeout - touched object but no grasp after 30 steps
-            if (self._activated >= 0 and 
-                self._contact_constraint is None and 
-                self._contact_timer > 30):
-                return True
-            
-            # Scenario 2: Dropped object during transport (not near goal)
-            if (self._had_successful_grasp and 
-                self._contact_constraint is None):
-                obj_pos, _ = get_body_pose(self.obj_id)
-                dist_to_goal = np.linalg.norm(np.array(obj_pos) - self.goal)
-                if dist_to_goal > 0.05 * self.SCALING:  # Dropped far from goal
-                    return True
-            
-            # Scenario 3: Gripper spam - excessive gripper actions while far from object
-            if (self._activated < 0 and 
-                self._gripper_spam_counter > 50):
-                return True
-        
-        return False
 
     def _get_obs_robot_state(self):
         """

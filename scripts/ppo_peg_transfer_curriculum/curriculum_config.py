@@ -158,8 +158,8 @@ TRAINING_CONFIG = {
 # Environment configuration
 ENV_CONFIG = {
     "render_mode": None,  # Set to "human" for visualization during training
-    "use_dense_reward": False,  # Always use sparse rewards for curriculum
-    "early_exit_enabled": True,  # Enable early exit for efficiency
+    "use_dense_reward": True,   # Use dense rewards for Level 1 (like NeedleReach)
+    "early_exit_enabled": False,  # Disabled early exit - let episodes run naturally
 }
 
 def get_level_config(level: int) -> dict:
