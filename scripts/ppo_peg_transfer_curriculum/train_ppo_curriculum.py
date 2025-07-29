@@ -220,7 +220,6 @@ def train_level_manual(args):
         print(f"Max Episode Steps: {get_level_config(level).get('max_episode_steps', 'default')}")
         print(f"Rendering: {'Enabled' if args.render else 'Disabled'}")
         print(f"Dense Rewards: {ENV_CONFIG['use_dense_reward']}")
-        print(f"Early Exit: {ENV_CONFIG['early_exit_enabled']}")
         print(f"{'─'*60}")
         print(f"PPO HYPERPARAMETERS")
         print(f"{'─'*60}")
@@ -275,7 +274,6 @@ def train_level_manual(args):
             "ppo_params": ppo_params,
             "environment_config": {
                 "use_dense_reward": ENV_CONFIG["use_dense_reward"],
-                "early_exit_enabled": ENV_CONFIG["early_exit_enabled"],
                 "max_episode_steps": get_level_config(level).get('max_episode_steps', 'default')
             }
         }

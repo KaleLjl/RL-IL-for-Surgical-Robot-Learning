@@ -21,9 +21,6 @@ CURRICULUM_LEVELS = {
             "min_episodes": 1000,          # Minimum episodes before advancement
             "evaluation_window": 100,       # Last N episodes for success rate
         },
-        "early_exit": {
-            "no_progress_steps": 60,  # Increased from 30 to match longer episodes
-        },
         "ppo_params": {
             "learning_rate": 1e-4,  # Reduced from 3e-4 for more stable learning
             "n_steps": 2048,        # Increased from 1024 for better value estimates
@@ -47,9 +44,6 @@ CURRICULUM_LEVELS = {
             "success_rate_threshold": 0.7,  # 70% success rate
             "min_episodes": 1000,
             "evaluation_window": 100,
-        },
-        "early_exit": {
-            "no_contact_after_approach": 40,  # Exit if no contact after good approach
         },
         "ppo_params": {
             "learning_rate": 2e-4,  # Slightly lower for fine control
@@ -75,10 +69,6 @@ CURRICULUM_LEVELS = {
             "min_episodes": 1000,
             "evaluation_window": 100,
         },
-        "early_exit": {
-            "object_dropped": True,  # Exit immediately if object dropped
-            "contact_timeout": 30,   # Exit if contact but no grasp
-        },
         "ppo_params": {
             "learning_rate": 1e-4,  # Lower for complex coordination
             "n_steps": 4096,        # Longer rollouts for transport
@@ -102,12 +92,6 @@ CURRICULUM_LEVELS = {
             "success_rate_threshold": 0.8,  # Target 80% success rate
             "min_episodes": 2000,           # More episodes for final mastery
             "evaluation_window": 200,
-        },
-        "early_exit": {
-            "all_scenarios": True,  # All early exit scenarios active
-            "gripper_spam_limit": 50,
-            "contact_timeout": 30,
-            "drop_detection": True,
         },
         "ppo_params": {
             "learning_rate": 1e-4,
@@ -159,7 +143,6 @@ TRAINING_CONFIG = {
 ENV_CONFIG = {
     "render_mode": None,  # Set to "human" for visualization during training
     "use_dense_reward": True,   # Use dense rewards for Level 1 (like NeedleReach)
-    "early_exit_enabled": False,  # Disabled early exit - let episodes run naturally
 }
 
 def get_level_config(level: int) -> dict:
