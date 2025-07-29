@@ -1,0 +1,35 @@
+{
+  "evaluation_date": "2025-07-29T18:49:06.520379",
+  "results": {
+    "1": {
+      "1": {
+        "model_path": "models/ppo_curriculum/runs/run_20250729_192800_migrated/model_level_1_final.zip",
+        "level": 1,
+        "n_episodes": 10,
+        "success_rate": 0.0,
+        "mean_reward": -15.171559582464397,
+        "std_reward": 4.309504041299341,
+        "mean_length": 150.0,
+        "std_length": 0.0,
+        "early_exit_rate": 0.0,
+        "approach_rate": 0.9,
+        "grasp_rate": 0.0,
+        "transport_rate": 0.0
+      }
+    }
+  },
+  "summary": {
+    "level_1": {
+      "name": "Precise Approach",
+      "success_rate": 0.0,
+      "meets_threshold": false,
+      "mean_reward": -15.171559582464397,
+      "mean_episode_length": 150.0,
+      "sub_tasks": {
+        "approach": 0.9,
+        "grasp": 0.0,
+        "transport": 0.0
+      }
+    }
+  }
+}

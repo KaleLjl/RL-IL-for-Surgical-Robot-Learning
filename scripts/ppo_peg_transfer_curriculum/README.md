@@ -68,9 +68,25 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev tensorboard --logdir l
 # Evaluate a specific run (will find models for all levels in that run)
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py --run-name run_20250729_143022_level1_baseline
 
-# Evaluate specific model file
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py --model-path models/ppo_curriculum/runs/run_20250729_143022_level1_baseline/model_level_1_final.zip --level 1
+# Evaluate specific model file with visualization
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py --model-path models/ppo_curriculum/runs/run_20250729_143022_level1_baseline/model_level_1_final.zip --level 1 --render --episodes 10
+
+# Cross-level evaluation (test how well each level performs on all levels)
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py --run-name run_20250729_143022_level1_baseline --cross-eval --episodes 50
+
+# List available runs to evaluate
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py
 ```
+
+#### Evaluation Options
+
+- `--run-name`: Evaluate all models in a specific training run
+- `--model-path`: Evaluate a specific model file
+- `--level`: Specify which curriculum level to test on (1-4)
+- `--render`: Enable visual rendering during evaluation
+- `--episodes`: Number of episodes to evaluate (default: 100)
+- `--cross-eval`: Test each level's model on all curriculum levels
+- `--save-dir`: Custom directory for results (auto-generated if not specified)
 
 ## Advantages of Manual Training
 
@@ -105,8 +121,8 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_pe
 # 4. Compare different runs
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/compare_curriculum_runs.py
 
-# 5. Test final model
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py --run-name run_XXXXXXXX_experiment1 --level 4 --render
+# 5. Test final model with visualization
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py --run-name run_XXXXXXXX_experiment1 --level 4 --render --episodes 10
 ```
 
 ## Training Tips

@@ -11,6 +11,7 @@ import time
 import argparse
 import numpy as np
 import gymnasium as gym
+from datetime import datetime
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback, CallbackList
@@ -92,6 +93,13 @@ def train_simple(args):
     print(f"Level: {level} - {get_level_config(level)['name']}")
     print(f"{'='*60}\n")
     
+    # Create run directory structure
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_name = f"run_{timestamp}_{args.run_name}" if args.run_name else f"run_{timestamp}"
+    run_dir = os.path.join("models", "ppo_curriculum", "runs", run_name)
+    checkpoint_dir = os.path.join(run_dir, "checkpoints")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    
     # Create environment
     env = DummyVecEnv([create_env(args.env, level, seed=0, render=args.render)])
     env = VecMonitor(env)
@@ -118,8 +126,6 @@ def train_simple(args):
     callbacks.append(progress_callback)
     
     # Checkpoint callback
-    checkpoint_dir = f"checkpoints/level_{level}_{int(time.time())}"
-    os.makedirs(checkpoint_dir, exist_ok=True)
     checkpoint_callback = CheckpointCallback(
         save_freq=TRAINING_CONFIG["checkpoint_frequency"],
         save_path=checkpoint_dir,
@@ -137,6 +143,7 @@ def train_simple(args):
     print(f"  Dense Rewards: {ENV_CONFIG['use_dense_reward']}")
     print(f"  Learning Rate: {ppo_params['learning_rate']}")
     print(f"  Batch Size: {ppo_params['batch_size']}")
+    print(f"  Run Directory: {run_dir}")
     print(f"  Checkpoints: {checkpoint_dir}")
     print(f"Starting training...\n")
     
@@ -145,10 +152,8 @@ def train_simple(args):
     model.learn(total_timesteps=total_timesteps, callback=callback_list, progress_bar=True)
     training_time = time.time() - start_time
     
-    # Save model
-    os.makedirs("models", exist_ok=True)
-    timestamp = int(time.time())
-    model_path = f"models/ppo_level_{level}_{timestamp}.zip"
+    # Save final model in run directory
+    model_path = os.path.join(run_dir, f"model_level_{level}_final.zip")
     model.save(model_path)
     
     print(f"\n{'='*60}")
@@ -157,13 +162,14 @@ def train_simple(args):
     print(f"Total Episodes: {progress_callback.episode_count}")
     print(f"Final Success Rate: {progress_callback.success_count/progress_callback.episode_count:.1%} ({progress_callback.success_count}/{progress_callback.episode_count})")
     print(f"Final Avg Reward: {np.mean(progress_callback.episode_rewards[-50:]) if len(progress_callback.episode_rewards) >= 50 else np.mean(progress_callback.episode_rewards):.1f}")
-    print(f"Model saved to: {model_path}")
-    print(f"Checkpoints saved to: {checkpoint_dir}")
+    print(f"Run Directory: {run_dir}")
+    print(f"Final Model: {model_path}")
+    print(f"Checkpoints: {checkpoint_dir}")
     print(f"{'='*60}")
     
     # Cleanup
     env.close()
-    return model_path
+    return model_path, run_dir
 
 
 def main():
@@ -203,12 +209,24 @@ def main():
         help="Enable rendering during training"
     )
     
+    parser.add_argument(
+        "--run-name",
+        type=str,
+        default=None,
+        help="Custom name for this training run (will be added to timestamp)"
+    )
+    
     args = parser.parse_args()
     
     try:
-        model_path = train_simple(args)
+        model_path, run_dir = train_simple(args)
         print(f"\nTo evaluate this model, run:")
-        print(f"python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py --model-path {model_path} --level {args.level} --render")
+        print(f"docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py --model-path {model_path} --level {args.level} --render")
+        
+        # Also print next level training command if not level 4
+        if args.level < 4:
+            print(f"\nTo train Level {args.level + 1}, run:")
+            print(f"docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level {args.level + 1} --model-path {model_path}")
         
     except KeyboardInterrupt:
         print("\nTraining interrupted by user")

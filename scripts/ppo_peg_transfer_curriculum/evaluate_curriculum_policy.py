@@ -260,12 +260,7 @@ def plot_learning_curves(results: dict, save_path: str = None):
     plt.xticks([1, 2, 3, 4])
     plt.ylim(0, 105)
     
-    # Add advancement thresholds
-    for level in range(1, 5):
-        config = get_level_config(level)
-        threshold = config['advancement']['success_rate_threshold'] * 100
-        plt.axhline(y=threshold, color='r', linestyle='--', alpha=0.3, 
-                   label=f'L{level} threshold' if level == 1 else None)
+    # Remove threshold lines - no longer needed
     
     plt.legend()
     plt.tight_layout()
@@ -295,7 +290,6 @@ def generate_report(all_results: dict, save_path: str = None):
             report["summary"][f"level_{level}"] = {
                 "name": config["name"],
                 "success_rate": result["success_rate"],
-                "meets_threshold": result["success_rate"] >= config["advancement"]["success_rate_threshold"],
                 "mean_reward": result["mean_reward"],
                 "mean_episode_length": result["mean_length"],
                 "sub_tasks": {
@@ -319,7 +313,6 @@ def generate_report(all_results: dict, save_path: str = None):
     for level, summary in report["summary"].items():
         print(f"\n{summary['name']}:")
         print(f"  Success Rate: {summary['success_rate']:.1%}")
-        print(f"  Meets Threshold: {'✓' if summary['meets_threshold'] else '✗'}")
         print(f"  Mean Reward: {summary['mean_reward']:.2f}")
         print(f"  Sub-tasks: Approach {summary['sub_tasks']['approach']:.1%}, "
               f"Grasp {summary['sub_tasks']['grasp']:.1%}, "
