@@ -198,11 +198,11 @@ def train_level_manual(args):
             "level": level,
             "run_name": args.run_name,
             "timesteps_trained": total_timesteps,
-            "final_mean_reward": mean_reward,
-            "final_std_reward": std_reward,
+            "final_mean_reward": float(mean_reward),
+            "final_std_reward": float(std_reward),
             "total_episodes": progress_callback.episode_count,
-            "success_rate": progress_callback.success_count / progress_callback.episode_count if progress_callback.episode_count > 0 else 0,
-            "avg_episode_length": np.mean(progress_callback.episode_lengths) if progress_callback.episode_lengths else 0,
+            "success_rate": float(progress_callback.success_count / progress_callback.episode_count if progress_callback.episode_count > 0 else 0),
+            "avg_episode_length": float(np.mean(progress_callback.episode_lengths) if progress_callback.episode_lengths else 0),
             "ppo_params": ppo_params,
         }
         

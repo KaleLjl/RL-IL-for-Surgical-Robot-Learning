@@ -10,7 +10,7 @@ CURRICULUM_LEVELS = {
     1: {
         "name": "Precise Approach",
         "description": "Master reaching object with perfect positioning",
-        "max_episode_steps": 50,
+        "max_episode_steps": 100,  # Increased from 50 to allow more exploration
         "success_criteria": {
             "distance_threshold": 0.01,  # 1cm in scaled units
             "stable_steps_required": 5,   # Must maintain position for 5 steps
@@ -22,12 +22,12 @@ CURRICULUM_LEVELS = {
             "evaluation_window": 100,       # Last N episodes for success rate
         },
         "early_exit": {
-            "no_progress_steps": 30,  # Exit if no approach progress
+            "no_progress_steps": 60,  # Increased from 30 to match longer episodes
         },
         "ppo_params": {
-            "learning_rate": 3e-4,
-            "n_steps": 1024,
-            "batch_size": 64,
+            "learning_rate": 1e-4,  # Reduced from 3e-4 for more stable learning
+            "n_steps": 2048,        # Increased from 1024 for better value estimates
+            "batch_size": 256,      # Increased from 64 for better gradient estimates
             "n_epochs": 10,
             "gamma": 0.99,
             "clip_range": 0.2,
@@ -131,7 +131,7 @@ DEFAULT_PPO_PARAMS = {
     "clip_range": 0.2,
     "clip_range_vf": None,
     "normalize_advantage": True,
-    "ent_coef": 0.0,
+    "ent_coef": 0.01,  # Added entropy for exploration
     "vf_coef": 0.5,
     "max_grad_norm": 0.5,
     "target_kl": None,
@@ -141,7 +141,7 @@ DEFAULT_PPO_PARAMS = {
 # Training configuration
 TRAINING_CONFIG = {
     "total_timesteps_per_level": {
-        1: 50000,   # Approach should be learned quickly
+        1: 100000,  # Increased from 50k - approach needs more time with current success rate
         2: 100000,  # Grasping requires more exploration
         3: 150000,  # Transport is complex
         4: 200000,  # Full task integration
