@@ -173,9 +173,10 @@ class PegTransferEnv(DVRKEnv):
         """ Samples a new goal and returns it, aligned with SurRoL.
         """
         if self.curriculum_level == 1:
-            # Level 1: Goal is the object position (EEF should reach object)
+            # Level 1: Goal is 2cm above the object position (prevents over-approaching)
             obj_pos, _ = get_body_pose(self.obj_id)
             goal = np.array(obj_pos, dtype=np.float32)
+            goal[2] += 0.02 * self.SCALING  # Add 2cm above object
         else:
             # Higher levels: Goal is the destination peg position
             goal_pos, _ = get_link_pose(self.peg_board_id, self._pegs[0])
@@ -640,7 +641,14 @@ class PegTransferEnv(DVRKEnv):
         """
         # Pure distance penalty like NeedleReach - no success bonus
         distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
-        return -distance
+        reward = -distance
+        
+        # Small penalty for opening gripper (Level 1 should keep gripper closed)
+        jaw_angle = obs['observation'][6]  # Current jaw angle
+        target_jaw_angle = np.deg2rad(-40)  # Closed position (negative angle)
+        gripper_penalty = -0.1 * abs(jaw_angle - target_jaw_angle)
+        
+        return reward + gripper_penalty
 
 
     def _get_obs_robot_state(self):
