@@ -24,3 +24,5 @@ services:
     tty: true
     # GPU configuration - using runtime approach for better compatibility
     runtime: nvidia
+    # Run container with host user to avoid permission issues
+    user: "${UID:-1000}:${GID:-1000}"
