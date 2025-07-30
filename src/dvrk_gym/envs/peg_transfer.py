@@ -648,33 +648,30 @@ class PegTransferEnv(DVRKEnv):
 
     def _get_level_2_dense_reward(self, obs: dict) -> float:
         """
-        Simple dense reward for Level 2: Encourage grasping action.
+        Time penalty reward for Level 2: Must grasp quickly.
+        Builds on Level 1's approach skill - assumes robot can already approach objects.
         """
-        # Get EEF position (TIP position for grasping)
-        eef_pos = obs['observation'][:3]
-        # Get object position directly (since we need the actual object to grasp)
+        # Get object position directly
         obj_pos, _ = get_body_pose(self.obj_id)
         obj_pos = np.array(obj_pos)
-        
-        jaw_angle = obs['observation'][6]
         
         # Calculate distance from TIP to object (for grasping)
         tip_pos, _ = get_link_pose(self.psm1.body, self.psm1.TIP_LINK_INDEX)
         tip_pos = np.array(tip_pos)
         distance = np.linalg.norm(tip_pos - obj_pos)
         
-        # Base: negative distance (keep approaching)
-        reward = -distance
+        # Check if successfully grasped
+        is_grasped = self._activated >= 0 and self._contact_constraint is not None
         
-        # Encourage closing gripper when close to object
-        if distance < 0.02 * self.SCALING:  # Within 2cm
-            # Reward for closing gripper (jaw_angle goes negative when closing)
-            if jaw_angle < 0:
-                reward += 0.5 * abs(jaw_angle)  # More closed = more reward
+        if is_grasped:
+            return 10.0  # Success!
         
-        # Big reward for successful grasp
-        if self._activated >= 0 and self._contact_constraint is not None:
-            reward += 5.0
+        # Base time penalty - encourages quick grasping
+        reward = -1.0
+        
+        # If too far from object, extra penalty (shouldn't happen if Level 1 worked)
+        if distance > 0.03 * self.SCALING:  # More than 3cm away
+            reward -= 1.0  # Total -2.0 when far
         
         return reward
 
