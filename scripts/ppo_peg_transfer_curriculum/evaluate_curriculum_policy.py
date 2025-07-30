@@ -38,7 +38,7 @@ def detect_level_from_path(model_path: str) -> int:
         match = re.search(pattern, filename)
         if match:
             level = int(match.group(1))
-            if 1 <= level <= 4:
+            if 1 <= level <= 7:
                 return level
     
     # If no level found in filename, ask user
@@ -57,7 +57,7 @@ def evaluate_model(model_path: str, level: int = None, n_episodes: int = 50, ren
         level = detect_level_from_path(model_path)
         if level is None:
             print("Could not detect level from filename.")
-            print("Please specify level with --level (1-4)")
+            print("Please specify level with --level (1-7)")
             return
         print(f"Auto-detected Level {level} from filename")
     
@@ -70,7 +70,7 @@ def evaluate_model(model_path: str, level: int = None, n_episodes: int = 50, ren
     env = gym.make(
         "PegTransfer-v0",
         render_mode="human" if render else None,
-        use_dense_reward=False,
+        use_dense_reward=True,  # Match training environment
         curriculum_level=level
     )
     env = FlattenDictObsWrapper(env)
@@ -156,7 +156,7 @@ def main():
     parser.add_argument(
         "--level",
         type=int,
-        choices=[1, 2, 3, 4],
+        choices=[1, 2, 3, 4, 5, 6, 7],
         help="Curriculum level (auto-detected if not specified)"
     )
     

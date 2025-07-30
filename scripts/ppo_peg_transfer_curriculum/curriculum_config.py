@@ -8,8 +8,8 @@ skill building in the PegTransfer manipulation task.
 # Curriculum Level Definitions
 CURRICULUM_LEVELS = {
     1: {
-        "name": "Waypoint 1: Approach",
-        "description": "Reach grasp position with open gripper",
+        "name": "Waypoint 0: Safe Approach", 
+        "description": "Collision-free approach above object with open gripper",
         "max_episode_steps": 100,  # Increased from 50 to allow more exploration
         "success_criteria": {
             "distance_threshold": 0.01,  # 1cm in scaled units
@@ -32,8 +32,8 @@ CURRICULUM_LEVELS = {
     },
     
     2: {
-        "name": "Waypoint 2: Grasp",
-        "description": "Close gripper to grasp object at position",
+        "name": "Waypoint 1: Precise Position",
+        "description": "Precise positioning for grasp (approach from above)",
         "max_episode_steps": 80,
         "success_criteria": {
             "approach_required": True,      # Must achieve Level 1 criteria first
@@ -56,8 +56,8 @@ CURRICULUM_LEVELS = {
     },
     
     3: {
-        "name": "Waypoint 3: Lift",
-        "description": "Lift grasped object to above_height",
+        "name": "Waypoint 2: Grasp Action",
+        "description": "Execute grasping (close gripper)",
         "max_episode_steps": 120,
         "success_criteria": {
             "grasp_required": True,         # Must have stable grasp
@@ -80,8 +80,8 @@ CURRICULUM_LEVELS = {
     },
     
     4: {
-        "name": "Waypoint 3: Lift",
-        "description": "Lift grasped object to above position",
+        "name": "Waypoint 3: Coordinated Lift",
+        "description": "Lift grasped object while maintaining grasp",
         "max_episode_steps": 120,
         "success_criteria": {
             "grasp_required": True,
