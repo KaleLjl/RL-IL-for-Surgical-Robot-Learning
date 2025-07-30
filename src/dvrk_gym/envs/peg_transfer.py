@@ -54,7 +54,8 @@ class PegTransferEnv(DVRKEnv):
         self.has_object = True
         self._activated = -1
         self._contact_constraint = None
-        self._contact_approx = False  # Use physical contact detection (original SurROL)  
+        # Use distance-based activation for Level 2 (more forgiving for learning)
+        self._contact_approx = True if curriculum_level == 2 else False
         self._waypoint_goal = True   # PegTransfer has waypoint goals, so should be True
         self._waypoints = None
         
@@ -170,17 +171,34 @@ class PegTransferEnv(DVRKEnv):
         }
 
     def _sample_goal(self) -> np.ndarray:
-        """ Samples a new goal and returns it, aligned with SurRoL.
+        """ Samples a new goal and returns it, aligned with SurRoL waypoints.
         """
+        obj_pos, _ = get_body_pose(self.obj_id)
+        
         if self.curriculum_level == 1:
-            # Level 1: Goal is 2cm above the object position (prevents over-approaching)
-            obj_pos, _ = get_body_pose(self.obj_id)
-            goal = np.array(obj_pos, dtype=np.float32)
-            goal[2] += 0.02 * self.SCALING  # Add 2cm above object
+            # Level 1 = Waypoint 1: Approach grasp position with open gripper
+            object_surface_height = obj_pos[2] + (0.003 + 0.0102) * self.SCALING
+            target_tip_height = object_surface_height - 0.022 * self.SCALING
+            grasp_height = target_tip_height + 0.051
+            goal = np.array([obj_pos[0], obj_pos[1], grasp_height], dtype=np.float32)
+            
+        elif self.curriculum_level == 2:
+            # Level 2 = Waypoint 2: Same position as Level 1, but close gripper
+            object_surface_height = obj_pos[2] + (0.003 + 0.0102) * self.SCALING
+            target_tip_height = object_surface_height - 0.022 * self.SCALING
+            grasp_height = target_tip_height + 0.051
+            goal = np.array([obj_pos[0], obj_pos[1], grasp_height], dtype=np.float32)
+            
+        elif self.curriculum_level == 3:
+            # Level 3 = Waypoint 3: Lift to above object position
+            above_height = obj_pos[2] + 0.045 * self.SCALING  # 4.5cm above object
+            goal = np.array([obj_pos[0], obj_pos[1], above_height], dtype=np.float32)
+            
         else:
-            # Higher levels: Goal is the destination peg position
+            # Level 4 = Waypoints 4-6: Full task - goal is the destination peg position
             goal_pos, _ = get_link_pose(self.peg_board_id, self._pegs[0])
             goal = np.array(goal_pos, dtype=np.float32)
+            
         return goal.copy()
     
     def reset(self, seed=None, options=None):
@@ -197,7 +215,14 @@ class PegTransferEnv(DVRKEnv):
         self._grasp_stable_steps = 0
         
         # Call parent reset
-        return super().reset(seed=seed, options=options)
+        obs, info = super().reset(seed=seed, options=options)
+        
+        # Store initial object height for Level 2 lifting detection
+        if self.curriculum_level == 2:
+            obj_pos, _ = get_body_pose(self.obj_id)
+            self._initial_obj_height = obj_pos[2]
+        
+        return obs, info
 
     def _sample_goal_callback(self):
         """ Moves the goal visualization sphere to the new goal position.
@@ -371,7 +396,6 @@ class PegTransferEnv(DVRKEnv):
                 has_contact_2 = len(points_2) > 0
                 
                 # Calculate distances from finger tips to object
-                from ..utils.pybullet_utils import get_link_pose
                 pos_tip_1, _ = get_link_pose(psm.body, 6)  # Left finger
                 pos_tip_2, _ = get_link_pose(psm.body, 7)  # Right finger
                 pos_obj, _ = get_link_pose(self.obj_id, self.obj_link1 if idx == 0 else self.obj_link2)
@@ -519,42 +543,34 @@ class PegTransferEnv(DVRKEnv):
             return self._is_level_4_success(obs)
     
     def _is_level_1_success(self, obs: dict) -> bool:
-        """Level 1: Precise approach - simple distance-based success like NeedleReach."""
-        # Match NeedleReach: achieved_goal vs desired_goal
+        """Level 1: Reach grasp position with open gripper."""
+        # Check distance to goal
         distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
-        return distance < self.success_threshold
+        
+        # Check gripper state (jaw_angle > 0 means open)
+        jaw_angle = obs['observation'][6]
+        
+        # Success: at position AND gripper is open
+        return distance < self.success_threshold and jaw_angle > 0.3
     
     def _is_level_2_success(self, obs: dict) -> bool:
-        """Level 2: Precise grasp - stable constraint creation."""
-        # First check if level 1 criteria met
-        if not self._is_level_1_success(obs):
-            return False
-        
-        # Check for stable grasp
-        is_grasped = self._activated >= 0 and self._contact_constraint is not None
-        if is_grasped:
-            self._grasp_stable_steps += 1
-        else:
-            self._grasp_stable_steps = 0
-        
-        # Success: stable grasp for 10 consecutive steps
-        return self._grasp_stable_steps >= 10
+        """Level 2 = Waypoint 2: Close gripper and grasp object."""
+        # Success: grasp constraint created (object is grasped)
+        return self._activated >= 0 and self._contact_constraint is not None
     
     def _is_level_3_success(self, obs: dict) -> bool:
-        """Level 3: Precise transport - object near goal."""
-        # Must have achieved grasp first
+        """Level 3 = Waypoint 3: Lift object to above_height while grasped."""
+        # Must be grasped
         is_grasped = self._activated >= 0 and self._contact_constraint is not None
         if not is_grasped:
             return False
         
-        # Check distance to goal
-        goal_distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
-        
-        # Success: transported to within 2cm of goal
-        return goal_distance < 0.02 * self.SCALING
+        # Check if EEF reached the lift goal (above_height)
+        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        return distance < self.success_threshold
     
     def _is_level_4_success(self, obs: dict) -> bool:
-        """Level 4: Full task - original success criteria."""
+        """Level 4 = Waypoints 4-6: Complete transport and release at goal."""
         # Check both position and height constraints similar to SurRoL
         goal_distance_2d = np.linalg.norm(obs['achieved_goal'][:2] - obs['desired_goal'][:2])
         height_diff = np.abs(obs['achieved_goal'][2] - obs['desired_goal'][2])
@@ -573,8 +589,11 @@ class PegTransferEnv(DVRKEnv):
         elif self.curriculum_level == 2:
             # Level 2 uses dense rewards to encourage grasping
             return self._get_level_2_dense_reward(obs)
+        elif self.curriculum_level == 3:
+            # Level 3 uses dense rewards to encourage lifting
+            return self._get_level_3_dense_reward(obs)
         elif self.curriculum_level < 4 or not self.use_dense_reward:
-            # Level 3 uses sparse rewards, Level 4 can use dense if enabled
+            # Level 4 can use dense if enabled, otherwise sparse
             return self._get_sparse_reward(obs)
         else:
             # Level 4 can use dense rewards if enabled
@@ -639,39 +658,79 @@ class PegTransferEnv(DVRKEnv):
 
     def _get_level_1_dense_reward(self, obs: dict) -> float:
         """
-        Dense reward for Level 1: Simple approach like NeedleReach.
-        Pure negative distance reward without success bonus.
+        Dense reward for Level 1: Approach grasp position with open gripper.
         """
-        # Pure distance penalty like NeedleReach - no success bonus
+        # Get distance to goal
         distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
-        return -distance
+        jaw_angle = obs['observation'][6]
+        
+        # Base distance penalty
+        reward = -distance
+        
+        # Penalty for closing gripper prematurely (when far from goal)
+        if distance > 0.02 * self.SCALING and jaw_angle < 0:
+            reward -= 0.5  # Discourage closing when far
+        
+        # Small bonus for keeping gripper open when close to goal
+        if distance < 0.02 * self.SCALING and jaw_angle > 0.3:
+            reward += 0.2
+        
+        return reward
 
     def _get_level_2_dense_reward(self, obs: dict) -> float:
         """
-        Time penalty reward for Level 2: Must grasp quickly.
-        Builds on Level 1's approach skill - assumes robot can already approach objects.
+        Level 2 = Waypoint 2: Close gripper to grasp object.
         """
-        # Get object position directly
-        obj_pos, _ = get_body_pose(self.obj_id)
-        obj_pos = np.array(obj_pos)
+        # Check if goal position is reached (EEF at grasp position)
+        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        jaw_angle = obs['observation'][6]
         
-        # Calculate distance from TIP to object (for grasping)
-        tip_pos, _ = get_link_pose(self.psm1.body, self.psm1.TIP_LINK_INDEX)
-        tip_pos = np.array(tip_pos)
-        distance = np.linalg.norm(tip_pos - obj_pos)
-        
-        # Check if successfully grasped
+        # Check grasp status
         is_grasped = self._activated >= 0 and self._contact_constraint is not None
         
         if is_grasped:
-            return 10.0  # Success!
+            return 10.0  # Success! Object grasped
         
-        # Base time penalty - encourages quick grasping
-        reward = -1.0
+        # Not grasped yet - encourage closing gripper when at position
+        reward = -1.0  # Base time penalty
         
-        # If too far from object, extra penalty (shouldn't happen if Level 1 worked)
-        if distance > 0.03 * self.SCALING:  # More than 3cm away
-            reward -= 1.0  # Total -2.0 when far
+        # If at correct position, encourage closing gripper
+        if distance < self.success_threshold:  # At waypoint position
+            if jaw_angle > 0:  # Gripper still open
+                reward -= 0.5  # Extra penalty for not closing
+            elif jaw_angle < -0.3:  # Gripper closing
+                reward += 0.5  # Bonus for closing gripper
+        else:
+            # Penalty for being away from position
+            reward -= distance  # Distance penalty
+        
+        return reward
+
+    def _get_level_3_dense_reward(self, obs: dict) -> float:
+        """
+        Level 3 = Waypoint 3: Lift object to above_height while maintaining grasp.
+        """
+        # Check if grasped
+        is_grasped = self._activated >= 0 and self._contact_constraint is not None
+        
+        if not is_grasped:
+            return -10.0  # Heavy penalty for dropping object
+        
+        # Check goal position (EEF at above_height)
+        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        jaw_angle = obs['observation'][6]
+        
+        if distance < self.success_threshold:
+            return 10.0  # Success! Lifted to target height
+        
+        # Encourage lifting while maintaining grasp
+        reward = -distance  # Distance-based reward to lift goal
+        
+        # Bonus for maintaining closed gripper
+        if jaw_angle < -0.3:
+            reward += 0.2
+        else:
+            reward -= 0.5  # Penalty for opening gripper
         
         return reward
 
