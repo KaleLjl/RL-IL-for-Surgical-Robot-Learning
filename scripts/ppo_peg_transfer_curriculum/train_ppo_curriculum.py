@@ -185,8 +185,8 @@ def main():
         "--level",
         type=int,
         required=True,
-        choices=[1, 2, 3, 4],
-        help="Curriculum level to train (1-4)"
+        choices=[1, 2, 3, 4, 5, 6, 7],
+        help="Curriculum level to train (1-7)"
     )
     
     parser.add_argument(
@@ -223,8 +223,8 @@ def main():
         print(f"\nTo evaluate this model, run:")
         print(f"docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py {model_path} --render")
         
-        # Also print next level training command if not level 4
-        if args.level < 4:
+        # Also print next level training command if not level 7
+        if args.level < 7:
             print(f"\nTo train Level {args.level + 1}, run:")
             print(f"docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level {args.level + 1} --model-path {model_path}")
         

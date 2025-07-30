@@ -1,28 +1,37 @@
-# Manual PPO Curriculum Learning for PegTransfer Task
+# 7-Level Waypoint-Aligned Curriculum Learning for PegTransfer Task
 
-This simplified version allows you to manually train each curriculum level independently, giving you full control over the training process.
+This curriculum learning system provides perfect 1:1 mapping with oracle waypoints, decomposing the complete manipulation task into 7 focused skills that eliminate exploration issues and ensure smooth learning progression.
 
-## Quick Start - Manual Training
+## Quick Start - Complete 7-Level Training
 
-### 1. Train Each Level Manually
+### 1. Train Each Level Sequentially
 
 ```bash
-# Train Level 1 (Precise Approach)
+# Level 1: Waypoint 0 - Safe collision-free approach above object
 docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 1
 
-# Train Level 2 (Precise Grasp) - starting from Level 1 model
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 2 --model-path models/ppo_curriculum/runs/run_20250729_143022_level1_baseline/model_level_1_final.zip
+# Level 2: Waypoint 1 - Precise positioning for grasp (approach from above)
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 2 --model-path models/ppo_curriculum/runs/run_TIMESTAMP/model_level_1_final.zip
 
-# Train Level 3 (Precise Transport) - starting from Level 2 model
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 3 --model-path models/ppo_curriculum/runs/run_20250729_150000_level2_from_level1/model_level_2_final.zip
+# Level 3: Waypoint 2 - Grasping action execution
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 3 --model-path models/ppo_curriculum/runs/run_TIMESTAMP/model_level_2_final.zip
 
-# Train Level 4 (Full Task) - starting from Level 3 model
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 4 --model-path models/ppo_curriculum/runs/run_20250729_160000_level3_from_level2/model_level_3_final.zip
+# Level 4: Waypoint 3 - Coordinated lifting while maintaining grasp
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 4 --model-path models/ppo_curriculum/runs/run_TIMESTAMP/model_level_3_final.zip
+
+# Level 5: Waypoint 4 - Horizontal transport to above goal position
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 5 --model-path models/ppo_curriculum/runs/run_TIMESTAMP/model_level_4_final.zip
+
+# Level 6: Waypoint 5 - Precise lowering to release height
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 6 --model-path models/ppo_curriculum/runs/run_TIMESTAMP/model_level_5_final.zip
+
+# Level 7: Waypoint 6 - Release timing and task completion
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 7 --model-path models/ppo_curriculum/runs/run_TIMESTAMP/model_level_6_final.zip
 ```
 
 ### 2. Key Arguments
 
-- `--level`: **Required.** Which curriculum level to train (1-4)
+- `--level`: **Required.** Which curriculum level to train (1-7)
 - `--model-path`: Path to a saved model to continue training from (optional)
 - `--timesteps`: How many timesteps to train (uses config default if not specified)
 - `--render`: Enable visualization during training (opens PyBullet window)
@@ -78,7 +87,7 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_pe
 #### Evaluation Options (Super Simple)
 
 - `model_path`: **Required.** Path to the model file
-- `--level`: Override auto-detected level (1-4)
+- `--level`: Override auto-detected level (1-7)
 - `--episodes`: Number of test episodes (default: 50)
 - `--render`: Show visualization during evaluation
 
@@ -96,34 +105,54 @@ The script will:
 4. **Debugging**: Simpler to debug issues with specific levels
 5. **Resume Training**: Continue training a level if performance isn't good enough
 
-## Curriculum Levels
+## Complete 7-Level Waypoint-Aligned Curriculum
 
-| Level | Name | Description | Default Timesteps |
-|-------|------|-------------|------------------|
-| 1 | Precise Approach | Master reaching object with stable positioning | 50,000 |
-| 2 | Precise Grasp | Master grasping after successful approach | 100,000 |
-| 3 | Precise Transport | Master transporting without dropping | 150,000 |
-| 4 | Full Task Mastery | Complete the full task with release precision | 200,000 |
+| Level | Oracle Waypoint | Name | Description | Default Timesteps |
+|-------|----------------|------|-------------|------------------|
+| **1** | **Waypoint 0** | Safe Approach | Collision-free approach above object (gripper open) | 100,000 |
+| **2** | **Waypoint 1** | Precise Position | Precise positioning for grasp (gripper open) | 100,000 |
+| **3** | **Waypoint 2** | Grasp Action | Execute grasping (close gripper) | 100,000 |
+| **4** | **Waypoint 3** | Coordinated Lift | Lift while maintaining grasp | 120,000 |
+| **5** | **Waypoint 4** | Transport | Horizontal transport to goal area | 150,000 |
+| **6** | **Waypoint 5** | Precise Lower | Lower to release height | 100,000 |
+| **7** | **Waypoint 6** | Release & Complete | Release object and complete task | 120,000 |
+
+### Key Benefits of This Design:
+
+1. **Zero Exploration Issues**: Each level has a clear, collision-free goal
+2. **Perfect Skill Transfer**: Level N's success state = Level N+1's starting state  
+3. **Oracle Alignment**: Every level teaches exactly one oracle waypoint
+4. **Gradual Complexity**: Skills build incrementally without gaps
+5. **Robust Learning**: No distribution shift between levels
 
 ## Example Training Workflow
 
+### Complete 7-Level Training Sequence
+
 ```bash
-# 1. Start with Level 1
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 1 --timesteps 100000
+# Step 1: Train Level 1 (Safe Approach) - Should achieve ~100% success
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 1
 
-# 1a. Train with visualization (useful for debugging)
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 1 --timesteps 100000 --render
+# Step 2: Use Level 1 model to train Level 2 (Precise Positioning)
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 2 --model-path models/ppo_curriculum/runs/run_TIMESTAMP/model_level_1_final.zip
 
-# 2. Check the success rate in the output. If good (>80%), move to Level 2
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 2 --model-path models/ppo_curriculum/runs/run_XXXXXXXX_experiment1/model_level_1_final.zip --timesteps 150000
+# Step 3: Continue through all 7 levels...
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 3 --model-path models/ppo_curriculum/runs/run_TIMESTAMP/model_level_2_final.zip
 
-# 3. Continue this pattern through all levels
+# ... (repeat for levels 4-7)
 
-# 4. Evaluate the final model
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py models/ppo_curriculum/runs/run_XXXXXXXX_experiment1/model_level_4_final.zip
+# Final Step: Evaluate complete task performance
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py models/ppo_curriculum/runs/run_TIMESTAMP/model_level_7_final.zip --render --episodes 20
+```
 
-# 5. Test with visualization
-docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py models/ppo_curriculum/runs/run_XXXXXXXX_experiment1/model_level_4_final.zip --render --episodes 10
+### Training with Visualization (Debugging)
+
+```bash
+# Train any level with visualization to debug issues
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/pgo_peg_transfer_curriculum/train_ppo_curriculum.py --level 1 --render
+
+# Evaluate with visualization to see learned behavior
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py models/ppo_curriculum/runs/run_TIMESTAMP/model_level_1_final.zip --render --episodes 10
 ```
 
 ## Training Tips

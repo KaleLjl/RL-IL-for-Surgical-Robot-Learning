@@ -176,26 +176,58 @@ class PegTransferEnv(DVRKEnv):
         obj_pos, _ = get_body_pose(self.obj_id)
         
         if self.curriculum_level == 1:
-            # Level 1 = Waypoint 1: Approach grasp position with open gripper
-            object_surface_height = obj_pos[2] + (0.003 + 0.0102) * self.SCALING
-            target_tip_height = object_surface_height - 0.022 * self.SCALING
-            grasp_height = target_tip_height + 0.051
-            goal = np.array([obj_pos[0], obj_pos[1], grasp_height], dtype=np.float32)
+            # Level 1 = Waypoint 0: Safe approach above object
+            above_height = obj_pos[2] + 0.045 * self.SCALING  # 4.5cm above object (waypoint 0)
+            goal = np.array([obj_pos[0], obj_pos[1], above_height], dtype=np.float32)
             
         elif self.curriculum_level == 2:
-            # Level 2 = Waypoint 2: Same position as Level 1, but close gripper
+            # Level 2 = Waypoint 1: Move to grasp position (approach from above)
             object_surface_height = obj_pos[2] + (0.003 + 0.0102) * self.SCALING
             target_tip_height = object_surface_height - 0.022 * self.SCALING
             grasp_height = target_tip_height + 0.051
             goal = np.array([obj_pos[0], obj_pos[1], grasp_height], dtype=np.float32)
             
         elif self.curriculum_level == 3:
-            # Level 3 = Waypoint 3: Lift to above object position
+            # Level 3 = Waypoint 2: Same as Level 2 but close gripper to grasp
+            object_surface_height = obj_pos[2] + (0.003 + 0.0102) * self.SCALING
+            target_tip_height = object_surface_height - 0.022 * self.SCALING
+            grasp_height = target_tip_height + 0.051
+            goal = np.array([obj_pos[0], obj_pos[1], grasp_height], dtype=np.float32)
+            
+        elif self.curriculum_level == 4:
+            # Level 4 = Waypoint 3: Lift to above object position
             above_height = obj_pos[2] + 0.045 * self.SCALING  # 4.5cm above object
             goal = np.array([obj_pos[0], obj_pos[1], above_height], dtype=np.float32)
             
+        elif self.curriculum_level == 5:
+            # Level 5 = Waypoint 4: Transport to above goal position
+            goal_pos, _ = get_link_pose(self.peg_board_id, self._pegs[0])
+            pos_peg = get_link_pose(self.peg_board_id, self._pegs[self.obj_id - np.min(self._blocks) + 6])[0]
+            pos_place = [goal_pos[0] + obj_pos[0] - pos_peg[0],
+                        goal_pos[1] + obj_pos[1] - pos_peg[1]]
+            above_height = obj_pos[2] + 0.045 * self.SCALING  # Same height as waypoint 0/3
+            goal = np.array([pos_place[0], pos_place[1], above_height], dtype=np.float32)
+            
+        elif self.curriculum_level == 6:
+            # Level 6 = Waypoint 5: Lower to release height above goal
+            goal_pos, _ = get_link_pose(self.peg_board_id, self._pegs[0])
+            pos_peg = get_link_pose(self.peg_board_id, self._pegs[self.obj_id - np.min(self._blocks) + 6])[0]
+            pos_place = [goal_pos[0] + obj_pos[0] - pos_peg[0],
+                        goal_pos[1] + obj_pos[1] - pos_peg[1]]
+            release_height = goal_pos[2] + 0.021 * self.SCALING  # 2.1cm above goal
+            goal = np.array([pos_place[0], pos_place[1], release_height], dtype=np.float32)
+            
+        elif self.curriculum_level == 7:
+            # Level 7 = Waypoint 6: Same position as Level 6, but release object
+            goal_pos, _ = get_link_pose(self.peg_board_id, self._pegs[0])
+            pos_peg = get_link_pose(self.peg_board_id, self._pegs[self.obj_id - np.min(self._blocks) + 6])[0]
+            pos_place = [goal_pos[0] + obj_pos[0] - pos_peg[0],
+                        goal_pos[1] + obj_pos[1] - pos_peg[1]]
+            release_height = goal_pos[2] + 0.021 * self.SCALING  # 2.1cm above goal
+            goal = np.array([pos_place[0], pos_place[1], release_height], dtype=np.float32)
+            
         else:
-            # Level 4 = Waypoints 4-6: Full task - goal is the destination peg position
+            # Fallback: Full task - destination peg position
             goal_pos, _ = get_link_pose(self.peg_board_id, self._pegs[0])
             goal = np.array(goal_pos, dtype=np.float32)
             
@@ -539,7 +571,15 @@ class PegTransferEnv(DVRKEnv):
             return self._is_level_2_success(obs)
         elif self.curriculum_level == 3:
             return self._is_level_3_success(obs)
-        else:  # Level 4 (full task)
+        elif self.curriculum_level == 4:
+            return self._is_level_4_success(obs)
+        elif self.curriculum_level == 5:
+            return self._is_level_5_success(obs)
+        elif self.curriculum_level == 6:
+            return self._is_level_6_success(obs)
+        elif self.curriculum_level == 7:
+            return self._is_level_7_success(obs)
+        else:  # Fallback: full task
             return self._is_level_4_success(obs)
     
     def _is_level_1_success(self, obs: dict) -> bool:
@@ -570,8 +610,41 @@ class PegTransferEnv(DVRKEnv):
         return distance < self.success_threshold
     
     def _is_level_4_success(self, obs: dict) -> bool:
-        """Level 4 = Waypoints 4-6: Complete transport and release at goal."""
-        # Check both position and height constraints similar to SurRoL
+        """Level 4 = Waypoint 3: Lift grasped object to above position."""
+        # Must be grasped and at lift position
+        is_grasped = self._activated >= 0 and self._contact_constraint is not None
+        if not is_grasped:
+            return False
+        
+        # Check if EEF reached the lift goal
+        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        return distance < self.success_threshold
+    
+    def _is_level_5_success(self, obs: dict) -> bool:
+        """Level 5 = Waypoint 4: Transport to above goal position while grasped."""
+        # Must be grasped and at transport position
+        is_grasped = self._activated >= 0 and self._contact_constraint is not None
+        if not is_grasped:
+            return False
+        
+        # Check if EEF reached the transport goal
+        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        return distance < self.success_threshold
+    
+    def _is_level_6_success(self, obs: dict) -> bool:
+        """Level 6 = Waypoint 5: Lower to release height while grasped."""
+        # Must be grasped and at release height
+        is_grasped = self._activated >= 0 and self._contact_constraint is not None
+        if not is_grasped:
+            return False
+        
+        # Check if EEF reached the release height
+        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        return distance < self.success_threshold
+    
+    def _is_level_7_success(self, obs: dict) -> bool:
+        """Level 7 = Waypoint 6: Release object at correct position."""
+        # Success when object is placed correctly (original task completion)
         goal_distance_2d = np.linalg.norm(obs['achieved_goal'][:2] - obs['desired_goal'][:2])
         height_diff = np.abs(obs['achieved_goal'][2] - obs['desired_goal'][2])
         
@@ -590,10 +663,22 @@ class PegTransferEnv(DVRKEnv):
             # Level 2 uses dense rewards to encourage grasping
             return self._get_level_2_dense_reward(obs)
         elif self.curriculum_level == 3:
-            # Level 3 uses dense rewards to encourage lifting
+            # Level 3 uses dense rewards to encourage grasping
             return self._get_level_3_dense_reward(obs)
-        elif self.curriculum_level < 4 or not self.use_dense_reward:
-            # Level 4 can use dense if enabled, otherwise sparse
+        elif self.curriculum_level == 4:
+            # Level 4 uses dense rewards to encourage lifting
+            return self._get_level_4_dense_reward(obs)
+        elif self.curriculum_level == 5:
+            # Level 5 uses dense rewards to encourage transport
+            return self._get_level_5_dense_reward(obs)
+        elif self.curriculum_level == 6:
+            # Level 6 uses dense rewards to encourage lowering
+            return self._get_level_6_dense_reward(obs)
+        elif self.curriculum_level == 7:
+            # Level 7 uses dense rewards to encourage release
+            return self._get_level_7_dense_reward(obs)
+        elif not self.use_dense_reward:
+            # Fallback: sparse rewards
             return self._get_sparse_reward(obs)
         else:
             # Level 4 can use dense rewards if enabled
@@ -731,6 +816,97 @@ class PegTransferEnv(DVRKEnv):
             reward += 0.2
         else:
             reward -= 0.5  # Penalty for opening gripper
+        
+        return reward
+
+    def _get_level_4_dense_reward(self, obs: dict) -> float:
+        """Level 4 = Waypoint 3: Lift grasped object to above position."""
+        is_grasped = self._activated >= 0 and self._contact_constraint is not None
+        
+        if not is_grasped:
+            return -10.0  # Heavy penalty for dropping object
+        
+        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        jaw_angle = obs['observation'][6]
+        
+        if distance < self.success_threshold:
+            return 10.0  # Success! Lifted to target height
+        
+        # Encourage lifting while maintaining grasp
+        reward = -distance
+        if jaw_angle < -0.3:
+            reward += 0.2  # Maintain closed gripper
+        else:
+            reward -= 0.5  # Penalty for opening gripper
+        
+        return reward
+
+    def _get_level_5_dense_reward(self, obs: dict) -> float:
+        """Level 5 = Waypoint 4: Transport to above goal position."""
+        is_grasped = self._activated >= 0 and self._contact_constraint is not None
+        
+        if not is_grasped:
+            return -10.0  # Heavy penalty for dropping object
+        
+        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        jaw_angle = obs['observation'][6]
+        
+        if distance < self.success_threshold:
+            return 10.0  # Success! Transported to goal area
+        
+        # Encourage horizontal transport while maintaining grasp
+        reward = -distance
+        if jaw_angle < -0.3:
+            reward += 0.2  # Maintain closed gripper
+        else:
+            reward -= 0.5  # Penalty for opening gripper
+        
+        return reward
+
+    def _get_level_6_dense_reward(self, obs: dict) -> float:
+        """Level 6 = Waypoint 5: Lower to release height."""
+        is_grasped = self._activated >= 0 and self._contact_constraint is not None
+        
+        if not is_grasped:
+            return -10.0  # Heavy penalty for dropping object
+        
+        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        jaw_angle = obs['observation'][6]
+        
+        if distance < self.success_threshold:
+            return 10.0  # Success! At release height
+        
+        # Encourage lowering while maintaining grasp
+        reward = -distance
+        if jaw_angle < -0.3:
+            reward += 0.2  # Maintain closed gripper
+        else:
+            reward -= 0.5  # Penalty for opening gripper prematurely
+        
+        return reward
+
+    def _get_level_7_dense_reward(self, obs: dict) -> float:
+        """Level 7 = Waypoint 6: Release object at correct position."""
+        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        jaw_angle = obs['observation'][6]
+        
+        # Check if object is placed correctly (task completion)
+        goal_distance_2d = np.linalg.norm(obs['achieved_goal'][:2] - obs['desired_goal'][:2])
+        height_diff = np.abs(obs['achieved_goal'][2] - obs['desired_goal'][2])
+        
+        if (goal_distance_2d < 5e-3 * self.SCALING and height_diff < 4e-3 * self.SCALING):
+            return 10.0  # Success! Task completed
+        
+        # At release position, encourage opening gripper
+        reward = -1.0  # Base time penalty
+        
+        if distance < self.success_threshold:  # At correct EEF position
+            if jaw_angle > 0.3:  # Gripper open
+                reward += 2.0  # Good! Released at correct position
+            elif jaw_angle < -0.3:  # Still grasping
+                reward -= 0.5  # Should release now
+        else:
+            reward -= distance  # Get to release position first
         
         return reward
 

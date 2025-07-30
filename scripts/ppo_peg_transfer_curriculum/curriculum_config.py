@@ -80,9 +80,78 @@ CURRICULUM_LEVELS = {
     },
     
     4: {
-        "name": "Waypoints 4-6: Transport & Release",
-        "description": "Transport object to goal and release precisely",
-        "max_episode_steps": 150,
+        "name": "Waypoint 3: Lift",
+        "description": "Lift grasped object to above position",
+        "max_episode_steps": 120,
+        "success_criteria": {
+            "grasp_required": True,
+            "lift_height": 0.045,           # Must lift to above_height
+        },
+        "advancement": {
+            "success_rate_threshold": 0.7,
+            "min_episodes": 1000,
+            "evaluation_window": 100,
+        },
+        "ppo_params": {
+            "learning_rate": 1e-4,
+            "n_steps": 4096,
+            "batch_size": 256,
+            "n_epochs": 10,
+            "gamma": 0.995,
+            "clip_range": 0.15,
+        }
+    },
+    
+    5: {
+        "name": "Waypoint 4: Transport",
+        "description": "Transport grasped object to above goal position",
+        "max_episode_steps": 140,
+        "success_criteria": {
+            "grasp_required": True,
+            "transport_required": True,
+        },
+        "advancement": {
+            "success_rate_threshold": 0.6,
+            "min_episodes": 1000,
+            "evaluation_window": 100,
+        },
+        "ppo_params": {
+            "learning_rate": 8e-5,
+            "n_steps": 4096,
+            "batch_size": 256,
+            "n_epochs": 10,
+            "gamma": 0.995,
+            "clip_range": 0.15,
+        }
+    },
+    
+    6: {
+        "name": "Waypoint 5: Lower",
+        "description": "Lower to release height while maintaining grasp",
+        "max_episode_steps": 100,
+        "success_criteria": {
+            "grasp_required": True,
+            "release_height_required": True,
+        },
+        "advancement": {
+            "success_rate_threshold": 0.7,
+            "min_episodes": 1000,
+            "evaluation_window": 100,
+        },
+        "ppo_params": {
+            "learning_rate": 8e-5,
+            "n_steps": 4096,
+            "batch_size": 256,
+            "n_epochs": 10,
+            "gamma": 0.995,
+            "clip_range": 0.15,
+        }
+    },
+    
+    7: {
+        "name": "Waypoint 6: Release",
+        "description": "Release object at correct position to complete task",
+        "max_episode_steps": 80,
         "success_criteria": {
             "position_tolerance": 0.005,    # 0.5cm position accuracy
             "height_tolerance": 0.004,      # 0.4cm height accuracy
@@ -90,11 +159,11 @@ CURRICULUM_LEVELS = {
         },
         "advancement": {
             "success_rate_threshold": 0.8,  # Target 80% success rate
-            "min_episodes": 2000,           # More episodes for final mastery
+            "min_episodes": 1500,           # More episodes for final precision
             "evaluation_window": 200,
         },
         "ppo_params": {
-            "learning_rate": 1e-4,
+            "learning_rate": 5e-5,          # Slowest learning for precision
             "n_steps": 4096,
             "batch_size": 256,
             "n_epochs": 10,
@@ -125,10 +194,13 @@ DEFAULT_PPO_PARAMS = {
 # Training configuration
 TRAINING_CONFIG = {
     "total_timesteps_per_level": {
-        1: 100000,  # Increased from 50k - approach needs more time with current success rate
-        2: 100000,  # Grasping requires more exploration
-        3: 150000,  # Transport is complex
-        4: 200000,  # Full task integration
+        1: 100000,  # Safe approach above object
+        2: 100000,  # Precise positioning for grasp  
+        3: 100000,  # Grasping action
+        4: 120000,  # Lifting coordination
+        5: 150000,  # Transport coordination
+        6: 100000,  # Lowering precision
+        7: 120000,  # Release timing
     },
     "checkpoint_frequency": 10000,  # Save model every N steps
     "evaluation_frequency": 5000,    # Evaluate progress every N steps
@@ -148,7 +220,7 @@ ENV_CONFIG = {
 def get_level_config(level: int) -> dict:
     """Get configuration for a specific curriculum level."""
     if level not in CURRICULUM_LEVELS:
-        raise ValueError(f"Invalid curriculum level: {level}. Must be 1-4.")
+        raise ValueError(f"Invalid curriculum level: {level}. Must be 1-7.")
     return CURRICULUM_LEVELS[level]
 
 def get_ppo_params(level: int) -> dict:
