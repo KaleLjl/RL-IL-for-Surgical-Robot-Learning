@@ -221,7 +221,7 @@ def main():
     try:
         model_path, run_dir = train_simple(args)
         print(f"\nTo evaluate this model, run:")
-        print(f"docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py --model-path {model_path} --level {args.level} --render")
+        print(f"docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/evaluate_curriculum_policy.py {model_path} --render")
         
         # Also print next level training command if not level 4
         if args.level < 4:
