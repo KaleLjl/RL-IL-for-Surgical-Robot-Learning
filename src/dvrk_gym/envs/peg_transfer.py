@@ -154,11 +154,11 @@ class PegTransferEnv(DVRKEnv):
     def _get_obs(self) -> dict:
         robot_state = self._get_obs_robot_state().astype(np.float32)
         
-        # For Level 1: Use EEF position as achieved_goal (like NeedleReach)
+        # For Level 1: Use TIP position as achieved_goal (center between jaws)
         # For higher levels: Use object position as achieved_goal
         if self.curriculum_level == 1:
-            eef_pos, _ = get_link_pose(self.psm1.body, self.psm1.EEF_LINK_INDEX)
-            achieved_goal = np.array(eef_pos, dtype=np.float32)
+            tip_pos, _ = get_link_pose(self.psm1.body, self.psm1.TIP_LINK_INDEX)
+            achieved_goal = np.array(tip_pos, dtype=np.float32)
         else:
             # Get object position (the red block) - this is what we want to move to the goal
             obj_pos, _ = get_body_pose(self.obj_id)
@@ -583,15 +583,15 @@ class PegTransferEnv(DVRKEnv):
             return self._is_level_4_success(obs)
     
     def _is_level_1_success(self, obs: dict) -> bool:
-        """Level 1: Reach grasp position with open gripper."""
-        # Check distance to goal
+        """Level 1: Gripper body must attach precisely to target with open gripper."""
         distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
-        
-        # Check gripper state (jaw_angle > 0 means open)
         jaw_angle = obs['observation'][6]
+        is_gripper_open = jaw_angle > 0.3
         
-        # Success: at position AND gripper is open
-        return distance < self.success_threshold and jaw_angle > 0.3
+        # Success requires BOTH conditions:
+        # 1. Precise attachment (normal threshold)
+        # 2. Gripper must be open
+        return distance < self.success_threshold and is_gripper_open
     
     def _is_level_2_success(self, obs: dict) -> bool:
         """Level 2 = Waypoint 2: Close gripper and grasp object."""
@@ -743,22 +743,19 @@ class PegTransferEnv(DVRKEnv):
 
     def _get_level_1_dense_reward(self, obs: dict) -> float:
         """
-        Dense reward for Level 1: Approach grasp position with open gripper.
+        NeedleReach-style reward for Level 1: Negative distance + gripper state penalty.
+        Simple and clean like NeedleReach but with gripper considerations.
         """
-        # Get distance to goal
+        # Base reward: negative distance to goal (same as NeedleReach)
         distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
-        jaw_angle = obs['observation'][6]
-        
-        # Base distance penalty
         reward = -distance
         
-        # Penalty for closing gripper prematurely (when far from goal)
-        if distance > 0.02 * self.SCALING and jaw_angle < 0:
-            reward -= 0.5  # Discourage closing when far
+        # Gripper state penalty (only addition to NeedleReach style)
+        jaw_angle = obs['observation'][6]
+        is_gripper_open = jaw_angle > 0.3  # Open if > ~17 degrees
         
-        # Small bonus for keeping gripper open when close to goal
-        if distance < 0.02 * self.SCALING and jaw_angle > 0.3:
-            reward += 0.2
+        if not is_gripper_open:
+            reward -= 1.0  # Penalty for closed gripper (keep it simple)
         
         return reward
 
