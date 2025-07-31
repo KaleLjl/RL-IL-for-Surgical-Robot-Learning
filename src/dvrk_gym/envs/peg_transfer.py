@@ -249,29 +249,10 @@ class PegTransferEnv(DVRKEnv):
         # Call parent reset
         obs, info = super().reset(seed=seed, options=options)
         
-        # For Level 2: Initialize robot at Level 1's goal position to encourage exploration
-        if self.curriculum_level == 2:
+        # Store initial object height for level tracking if needed
+        if self.curriculum_level >= 2:
             obj_pos, _ = get_body_pose(self.obj_id)
             self._initial_obj_height = obj_pos[2]
-            
-            # Start at Level 1's position (above object) with some randomization
-            level1_height = obj_pos[2] + 0.045 * self.SCALING
-            
-            # Add small random offset to encourage exploration
-            random_offset = np.random.uniform(-0.005, 0.005) * self.SCALING
-            start_height = level1_height + random_offset
-            
-            # Set initial position
-            start_pos = (obj_pos[0], obj_pos[1], start_height)
-            orn = (0.5, 0.5, -0.5, -0.5)
-            joint_positions = self.psm1.inverse_kinematics((start_pos, orn), self.psm1.EEF_LINK_INDEX)
-            self.psm1.reset_joint(joint_positions)
-            
-            # Open gripper
-            self.psm1.move_jaw(np.deg2rad(40))
-            
-            # Update observation after repositioning
-            obs = self._get_obs()
         
         return obs, info
 
@@ -787,47 +768,16 @@ class PegTransferEnv(DVRKEnv):
     def _get_level_2_dense_reward(self, obs: dict) -> float:
         """
         Level 2 = Waypoint 1: Approach to grasp position with open gripper.
-        Simple height-based reward to encourage downward movement.
+        Simple reach-style reward: negative distance to goal.
         """
-        # Get positions
-        eef_pos = obs['observation'][:3]  # Current EEF position
-        tip_pos = obs['achieved_goal']  # TIP position for Level 2
-        goal_pos = obs['desired_goal']
-        obj_pos, _ = get_body_pose(self.obj_id)
+        # Simple negative distance reward (like reach environment)
+        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        reward = -distance
         
-        # Calculate Level 1 goal height (starting position)
-        level1_height = obj_pos[2] + 0.045 * self.SCALING
-        
-        # Simple height-based reward
-        # The lower you go (closer to goal), the higher the reward
-        current_height = tip_pos[2]
-        
-        # Linear reward based on height progress
-        # At Level 1 height: reward = 0
-        # At goal height: reward = 5
-        if current_height <= level1_height:
-            height_progress = (level1_height - current_height) / (level1_height - goal_pos[2])
-            height_progress = np.clip(height_progress, 0, 1)
-            reward = 5.0 * height_progress
-        else:
-            # Penalty for going above Level 1 height
-            reward = -1.0
-        
-        # Big bonus when reaching goal position
-        distance = np.linalg.norm(tip_pos - goal_pos)
-        if distance < self.success_threshold:
-            jaw_angle = obs['observation'][6]
-            if jaw_angle > 0.3:  # Gripper open
-                reward = 20.0  # Success!
-            else:
-                reward += 5.0  # At position but gripper closed
-        elif distance < 0.02 * self.SCALING:  # Close to goal
-            reward += 3.0
-        
-        # Small penalty for closing gripper
+        # Small penalty for closing gripper (should stay open)
         jaw_angle = obs['observation'][6]
-        if jaw_angle < 0.3 and distance > self.success_threshold:
-            reward -= 0.5
+        if jaw_angle < 0.3:  # Gripper closing
+            reward -= 1.0
         
         return reward
 
