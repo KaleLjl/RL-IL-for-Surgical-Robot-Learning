@@ -605,15 +605,9 @@ class PegTransferEnv(DVRKEnv):
         return distance < self.success_threshold and is_gripper_open
     
     def _is_level_3_success(self, obs: dict) -> bool:
-        """Level 3 = Waypoint 3: Lift object to above_height while grasped."""
-        # Must be grasped
-        is_grasped = self._activated >= 0 and self._contact_constraint is not None
-        if not is_grasped:
-            return False
-        
-        # Check if EEF reached the lift goal (above_height)
-        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
-        return distance < self.success_threshold
+        """Level 3 = Waypoint 2: Close gripper and grasp object."""
+        # Success: grasp constraint created (object is grasped)
+        return self._activated >= 0 and self._contact_constraint is not None
     
     def _is_level_4_success(self, obs: dict) -> bool:
         """Level 4 = Waypoint 3: Lift grasped object to above position."""
@@ -783,29 +777,27 @@ class PegTransferEnv(DVRKEnv):
 
     def _get_level_3_dense_reward(self, obs: dict) -> float:
         """
-        Level 3 = Waypoint 3: Lift object to above_height while maintaining grasp.
+        Level 3 = Waypoint 2: Close gripper to grasp object.
         """
         # Check if grasped
         is_grasped = self._activated >= 0 and self._contact_constraint is not None
         
-        if not is_grasped:
-            return -10.0  # Heavy penalty for dropping object
+        if is_grasped:
+            return 10.0  # Success! Object grasped
         
-        # Check goal position (EEF at above_height)
+        # Not grasped yet - position and gripper control
         distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
         jaw_angle = obs['observation'][6]
         
+        # Base reward: negative distance (reach position first)
+        reward = -distance
+        
+        # At grasp position? Encourage gripper closing
         if distance < self.success_threshold:
-            return 10.0  # Success! Lifted to target height
-        
-        # Encourage lifting while maintaining grasp
-        reward = -distance  # Distance-based reward to lift goal
-        
-        # Bonus for maintaining closed gripper
-        if jaw_angle < -0.3:
-            reward += 0.2
-        else:
-            reward -= 0.5  # Penalty for opening gripper
+            if jaw_angle > 0.3:  # Gripper still open
+                reward -= 1.0  # Penalty for not closing
+            elif jaw_angle < -0.3:  # Gripper closing/closed
+                reward += 2.0  # Bonus for closing action
         
         return reward
 
