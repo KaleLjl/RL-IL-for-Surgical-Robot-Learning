@@ -44,10 +44,15 @@ class PegTransferEnv(DVRKEnv):
                            + np.array([0., 0., 0.0102]).reshape((3, 1))  # tip-eef offset with collision margin
         self.workspace_limits = workspace_limits * self.SCALING
         
+        # Convert real-world threshold to simulation units
+        # DISTANCE_THRESHOLD = 0.005m (5mm) in real world
+        # SCALING = 5.0 means everything in simulation is 5x larger
+        # So distance_threshold = 0.005 * 5.0 = 0.025 in simulation units
         self.distance_threshold = self.DISTANCE_THRESHOLD * self.SCALING
         
         super().__init__(render_mode=self.render_mode)
         
+        # Success threshold for task completion (0.025 scaled units = 5mm real world)
         self.success_threshold = self.distance_threshold
         
         # Task-specific attributes
@@ -599,9 +604,10 @@ class PegTransferEnv(DVRKEnv):
         is_gripper_open = jaw_angle > 0.3
         
         # Success requires BOTH conditions:
-        # 1. Reasonably precise positioning at grasp height (1cm instead of 2.5cm)
+        # 1. Precise positioning at grasp height (5mm threshold, same as Level 1)
         # 2. Gripper must be open
-        precise_threshold = self.success_threshold * 0.4  # 0.01 (1cm) - practical for grasping
+        # Using success_threshold directly: 0.025 scaled units = 5mm in real world
+        precise_threshold = self.success_threshold  # 5mm precision for grasping
         return distance < precise_threshold and is_gripper_open
     
     def _is_level_3_success(self, obs: dict) -> bool:

@@ -36,12 +36,13 @@ CURRICULUM_LEVELS = {
             "lift_height": 0.005,          # Must lift object 0.5cm
         },
         "ppo_params": {
-            "learning_rate": 2e-4,  # Slightly lower for fine control
+            "learning_rate": 3e-4,  # Increase for faster learning
             "n_steps": 2048,
-            "batch_size": 128,
+            "batch_size": 64,       # Smaller batch for more frequent updates
             "n_epochs": 10,
             "gamma": 0.99,
-            "clip_range": 0.2,
+            "clip_range": 0.3,      # Higher clip range for more aggressive updates
+            "vf_coef": 1.0,         # Higher value function coefficient
         }
     },
     
@@ -191,7 +192,7 @@ ENTROPY_SCHEDULES = {
         "enabled": True,   # Level 2: Precision task - use entropy scheduling
         "schedule_type": "linear",
         "start_entropy": 0.01,
-        "end_entropy": 0.0001,
+        "end_entropy": 0.001,   # Less aggressive reduction - keep more exploration
         "description": "Reduces exploration noise dependency for precise positioning"
     },
     3: {
