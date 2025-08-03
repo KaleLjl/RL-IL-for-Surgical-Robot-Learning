@@ -16,11 +16,6 @@ CURRICULUM_LEVELS = {
             "stable_steps_required": 5,   # Must maintain position for 5 steps
             "orientation_tolerance": 15,  # degrees (not enforced in current implementation)
         },
-        "advancement": {
-            "success_rate_threshold": 0.8,  # 80% success rate
-            "min_episodes": 1000,          # Minimum episodes before advancement
-            "evaluation_window": 100,       # Last N episodes for success rate
-        },
         "ppo_params": {
             "learning_rate": 3e-4,  # Use NeedleReach proven value (was working well)
             "n_steps": 2048,        # Keep this - works well for both
@@ -39,11 +34,6 @@ CURRICULUM_LEVELS = {
             "approach_required": True,      # Must achieve Level 1 criteria first
             "grasp_stable_steps": 10,      # Maintain grasp for 10 steps
             "lift_height": 0.005,          # Must lift object 0.5cm
-        },
-        "advancement": {
-            "success_rate_threshold": 0.7,  # 70% success rate
-            "min_episodes": 1000,
-            "evaluation_window": 100,
         },
         "ppo_params": {
             "learning_rate": 2e-4,  # Slightly lower for fine control
@@ -64,11 +54,6 @@ CURRICULUM_LEVELS = {
             "goal_distance_threshold": 0.02, # Within 2cm of goal
             "no_drops_allowed": True,       # Constraint must be maintained
         },
-        "advancement": {
-            "success_rate_threshold": 0.6,  # 60% success rate
-            "min_episodes": 1000,
-            "evaluation_window": 100,
-        },
         "ppo_params": {
             "learning_rate": 1e-4,  # Lower for complex coordination
             "n_steps": 4096,        # Longer rollouts for transport
@@ -86,11 +71,6 @@ CURRICULUM_LEVELS = {
         "success_criteria": {
             "grasp_required": True,
             "lift_height": 0.045,           # Must lift to above_height
-        },
-        "advancement": {
-            "success_rate_threshold": 0.7,
-            "min_episodes": 1000,
-            "evaluation_window": 100,
         },
         "ppo_params": {
             "learning_rate": 1e-4,
@@ -110,11 +90,6 @@ CURRICULUM_LEVELS = {
             "grasp_required": True,
             "transport_required": True,
         },
-        "advancement": {
-            "success_rate_threshold": 0.6,
-            "min_episodes": 1000,
-            "evaluation_window": 100,
-        },
         "ppo_params": {
             "learning_rate": 8e-5,
             "n_steps": 4096,
@@ -132,11 +107,6 @@ CURRICULUM_LEVELS = {
         "success_criteria": {
             "grasp_required": True,
             "release_height_required": True,
-        },
-        "advancement": {
-            "success_rate_threshold": 0.7,
-            "min_episodes": 1000,
-            "evaluation_window": 100,
         },
         "ppo_params": {
             "learning_rate": 8e-5,
@@ -156,11 +126,6 @@ CURRICULUM_LEVELS = {
             "position_tolerance": 0.005,    # 0.5cm position accuracy
             "height_tolerance": 0.004,      # 0.4cm height accuracy
             "complete_task": True,          # Full task completion required
-        },
-        "advancement": {
-            "success_rate_threshold": 0.8,  # Target 80% success rate
-            "min_episodes": 1500,           # More episodes for final precision
-            "evaluation_window": 200,
         },
         "ppo_params": {
             "learning_rate": 5e-5,          # Slowest learning for precision
@@ -195,7 +160,7 @@ DEFAULT_PPO_PARAMS = {
 TRAINING_CONFIG = {
     "total_timesteps_per_level": {
         1: 100000,  # Safe approach above object
-        2: 100000,  # Precise positioning for grasp  
+        2: 150000,  # Precise positioning for grasp  
         3: 100000,  # Grasping action
         4: 120000,  # Lifting coordination
         5: 150000,  # Transport coordination
@@ -282,10 +247,6 @@ def get_ppo_params(level: int) -> dict:
 def get_max_timesteps(level: int) -> int:
     """Get maximum training timesteps for a level."""
     return TRAINING_CONFIG["total_timesteps_per_level"].get(level, 100000)
-
-def get_advancement_criteria(level: int) -> dict:
-    """Get advancement criteria for a level."""
-    return get_level_config(level)["advancement"]
 
 def get_entropy_schedule_config(level: int) -> dict:
     """Get entropy scheduling configuration for a level."""
