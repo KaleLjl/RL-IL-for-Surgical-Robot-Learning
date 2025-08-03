@@ -37,7 +37,22 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_pe
 - `--render`: Enable visualization during training (opens PyBullet window)
 - `--env`: Environment name (default: PegTransfer-v0)
 
-### 3. Directory Structure
+### 3. Continue Training from Saved Model
+
+To continue training from a previously saved model:
+
+```bash
+# Continue training from a specific model checkpoint
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level <level> --model-path <path_to_saved_model.zip>
+
+# Example: Continue training Level 3 from a saved model
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 3 --model-path models/ppo_curriculum/runs/run_20250729_143022/model_level_3_final.zip
+
+# Continue with custom timesteps
+docker compose -f docker/docker-compose.yml exec dvrk-dev python3 scripts/ppo_peg_transfer_curriculum/train_ppo_curriculum.py --level 3 --model-path models/ppo_curriculum/runs/run_20250729_143022/model_level_3_final.zip --timesteps 50000
+```
+
+### 4. Directory Structure
 
 Each training session creates its own run directory:
 
@@ -61,7 +76,7 @@ logs/ppo_curriculum/runs/
     └── tensorboard/
 ```
 
-### 4. Monitor Training
+### 5. Monitor Training
 
 ```bash
 # View TensorBoard for specific run
@@ -71,7 +86,7 @@ docker compose -f docker/docker-compose.yml exec dvrk-dev tensorboard --logdir l
 docker compose -f docker/docker-compose.yml exec dvrk-dev tensorboard --logdir logs/ppo_curriculum/runs
 ```
 
-### 5. Evaluate Models
+### 6. Evaluate Models
 
 ```bash
 # Evaluate a specific model (level auto-detected from filename)

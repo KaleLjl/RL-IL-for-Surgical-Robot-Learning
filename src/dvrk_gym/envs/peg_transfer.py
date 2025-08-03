@@ -154,9 +154,9 @@ class PegTransferEnv(DVRKEnv):
     def _get_obs(self) -> dict:
         robot_state = self._get_obs_robot_state().astype(np.float32)
         
-        # For Level 1 and 2: Use TIP position as achieved_goal (positioning tasks)
-        # For higher levels: Use object position as achieved_goal (manipulation tasks)
-        if self.curriculum_level <= 2:
+        # For Level 1, 2, and 3: Use TIP position as achieved_goal (positioning/grasping tasks)
+        # For higher levels (4+): Use object position as achieved_goal (manipulation tasks)
+        if self.curriculum_level <= 3:
             tip_pos, _ = get_link_pose(self.psm1.body, self.psm1.TIP_LINK_INDEX)
             achieved_goal = np.array(tip_pos, dtype=np.float32)
         else:
@@ -173,7 +173,7 @@ class PegTransferEnv(DVRKEnv):
     def _sample_goal(self) -> np.ndarray:
         """ Samples a new goal and returns it, aligned with SurRoL waypoints.
         """
-        obj_pos, _ = get_body_pose(self.obj_id)
+        obj_pos, _ = get_link_pose(self.obj_id, self.obj_link1)
         
         if self.curriculum_level == 1:
             # Level 1 = Waypoint 0: Safe approach above object
@@ -241,7 +241,6 @@ class PegTransferEnv(DVRKEnv):
         self._gripper_attempt_achieved = False
         self._contact_achieved = False
         self._grasp_achieved = False
-        
         
         # Reset curriculum tracking
         self._grasp_stable_steps = 0
@@ -606,10 +605,13 @@ class PegTransferEnv(DVRKEnv):
     
     def _is_level_3_success(self, obs: dict) -> bool:
         """Level 3 = Waypoint 2: Close gripper and grasp object."""
-        # Success: activation achieved (robot positioned near object with closed gripper)
-        # Note: We don't require constraint creation as it depends on complex physics
+        # Simplified success: just need to be in position and close gripper
+        # This allows the agent to learn gripper control first
+        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
         jaw_angle = obs['observation'][6]
-        return self._activated >= 0 and jaw_angle <= 0.0  # Any attempt to close gripper
+        # Use more generous threshold for Level 3 to help learning
+        level_3_threshold = self.success_threshold * 2.5  # 0.0625 instead of 0.025
+        return distance < level_3_threshold and jaw_angle <= 0.0
     
     def _is_level_4_success(self, obs: dict) -> bool:
         """Level 4 = Waypoint 3: Lift grasped object to above position."""
@@ -780,12 +782,15 @@ class PegTransferEnv(DVRKEnv):
     def _get_level_3_dense_reward(self, obs: dict) -> float:
         """
         Level 3 = Waypoint 2: Close gripper to grasp object.
+        Simplified reward to prevent reward hacking.
         """
-        # Check if grasped
-        is_grasped = self._activated >= 0 and self._contact_constraint is not None
+        # Check if Level 3 success achieved
+        distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
+        jaw_angle = obs['observation'][6]
+        level_3_threshold = self.success_threshold * 2.5  # Match success condition
         
-        if is_grasped:
-            return 10.0  # Success! Object grasped
+        if distance < level_3_threshold and jaw_angle <= 0.0:
+            return 10.0  # Success reward
         
         # Not grasped yet - position and gripper control
         distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
@@ -795,7 +800,7 @@ class PegTransferEnv(DVRKEnv):
         reward = -distance
         
         # At grasp position? Encourage gripper closing
-        if distance < self.success_threshold:
+        if distance < level_3_threshold:
             if jaw_angle > 0.3:  # Gripper still open
                 reward -= 1.0  # Penalty for not closing
             elif jaw_angle < -0.3:  # Gripper closing/closed
