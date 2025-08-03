@@ -773,11 +773,25 @@ class PegTransferEnv(DVRKEnv):
     def _get_level_2_dense_reward(self, obs: dict) -> float:
         """
         Level 2 = Waypoint 1: Approach to grasp position with open gripper.
-        Simple reach-style reward: negative distance to goal.
+        Quadratic penalty + stability bonus for precision.
         """
-        # Simple negative distance reward (like reach environment)
+        # Quadratic penalty - gets steeper near target for better precision
         distance = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
-        reward = -distance
+        reward = -distance ** 2
+        
+        # Stability bonus - reward staying close to target
+        if distance < self.success_threshold * 1.5:  # Within 1.5x success threshold
+            # Track consecutive steps within precision zone
+            if not hasattr(self, '_stability_counter'):
+                self._stability_counter = 0
+            self._stability_counter += 1
+            
+            # Progressive stability bonus
+            stability_bonus = min(self._stability_counter * 0.1, 2.0)  # Cap at +2.0
+            reward += stability_bonus
+        else:
+            # Reset counter if drift occurs
+            self._stability_counter = 0
         
         # Small penalty for closing gripper (should stay open)
         jaw_angle = obs['observation'][6]

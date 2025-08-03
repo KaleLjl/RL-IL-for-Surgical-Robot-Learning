@@ -189,10 +189,10 @@ ENTROPY_SCHEDULES = {
         "enabled": False,  # Level 1: Simple reaching, no entropy scheduling needed
     },
     2: {
-        "enabled": True,   # Level 2: Precision task - use entropy scheduling
+        "enabled": False,   # Level 2: Precision task - use entropy scheduling
         "schedule_type": "linear",
         "start_entropy": 0.01,
-        "end_entropy": 0.001,   # Less aggressive reduction - keep more exploration
+        "end_entropy": 0.0001,   # Less aggressive reduction - keep more exploration
         "description": "Reduces exploration noise dependency for precise positioning"
     },
     3: {
