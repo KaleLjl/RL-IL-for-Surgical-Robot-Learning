@@ -31,7 +31,7 @@ class PegTransferEnv(DVRKEnv):
     
     # Constants from the parent PsmEnv in SurRoL
     POSE_PSM1 = ((0.05, 0.24, 0.8524), (0, 0, -(90 + 20) / 180 * np.pi))
-    DISTANCE_THRESHOLD = 0.005
+    DISTANCE_THRESHOLD = 0.002  # Changed from 0.005m (5mm) to 0.002m (2mm) to match oracle precision
 
     def __init__(self, render_mode: str = None, use_dense_reward: bool = False, curriculum_level: int = 4):
         # Store render_mode and reward setting
@@ -45,14 +45,14 @@ class PegTransferEnv(DVRKEnv):
         self.workspace_limits = workspace_limits * self.SCALING
         
         # Convert real-world threshold to simulation units
-        # DISTANCE_THRESHOLD = 0.005m (5mm) in real world
+        # DISTANCE_THRESHOLD = 0.002m (2mm) in real world - matches oracle precision
         # SCALING = 5.0 means everything in simulation is 5x larger
-        # So distance_threshold = 0.005 * 5.0 = 0.025 in simulation units
+        # So distance_threshold = 0.002 * 5.0 = 0.01 in simulation units
         self.distance_threshold = self.DISTANCE_THRESHOLD * self.SCALING
         
         super().__init__(render_mode=self.render_mode)
         
-        # Success threshold for task completion (0.025 scaled units = 5mm real world)
+        # Success threshold for task completion (0.01 scaled units = 2mm real world)
         self.success_threshold = self.distance_threshold
         
         # Task-specific attributes
@@ -604,10 +604,10 @@ class PegTransferEnv(DVRKEnv):
         is_gripper_open = jaw_angle > 0.3
         
         # Success requires BOTH conditions:
-        # 1. Precise positioning at grasp height (5mm threshold, same as Level 1)
+        # 1. Precise positioning at grasp height (2mm threshold, same as Level 1 and oracle)
         # 2. Gripper must be open
-        # Using success_threshold directly: 0.025 scaled units = 5mm in real world
-        precise_threshold = self.success_threshold  # 5mm precision for grasping
+        # Using success_threshold directly: 0.01 scaled units = 2mm in real world
+        precise_threshold = self.success_threshold  # 2mm precision matching oracle
         return distance < precise_threshold and is_gripper_open
     
     def _is_level_3_success(self, obs: dict) -> bool:
