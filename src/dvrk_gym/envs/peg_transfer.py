@@ -599,9 +599,10 @@ class PegTransferEnv(DVRKEnv):
         is_gripper_open = jaw_angle > 0.3
         
         # Success requires BOTH conditions:
-        # 1. Precise positioning at grasp height
+        # 1. Reasonably precise positioning at grasp height (1cm instead of 2.5cm)
         # 2. Gripper must be open
-        return distance < self.success_threshold and is_gripper_open
+        precise_threshold = self.success_threshold * 0.4  # 0.01 (1cm) - practical for grasping
+        return distance < precise_threshold and is_gripper_open
     
     def _is_level_3_success(self, obs: dict) -> bool:
         """Level 3 = Waypoint 2: Close gripper and grasp object."""

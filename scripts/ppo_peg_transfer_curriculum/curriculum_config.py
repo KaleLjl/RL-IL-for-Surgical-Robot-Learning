@@ -217,6 +217,55 @@ ENV_CONFIG = {
     "use_dense_reward": True,   # Use dense rewards for Level 1 (like NeedleReach)
 }
 
+# Entropy scheduling configuration
+ENTROPY_SCHEDULES = {
+    1: {
+        "enabled": False,  # Level 1: Simple reaching, no entropy scheduling needed
+    },
+    2: {
+        "enabled": True,   # Level 2: Precision task - use entropy scheduling
+        "schedule_type": "linear",
+        "start_entropy": 0.01,
+        "end_entropy": 0.0001,
+        "description": "Reduces exploration noise dependency for precise positioning"
+    },
+    3: {
+        "enabled": True,   # Level 3: Grasping requires precision
+        "schedule_type": "linear", 
+        "start_entropy": 0.01,
+        "end_entropy": 0.0005,
+        "description": "Helps learn deterministic grasping actions"
+    },
+    4: {
+        "enabled": True,   # Level 4: Coordinated lifting
+        "schedule_type": "linear",
+        "start_entropy": 0.008,
+        "end_entropy": 0.0005,
+        "description": "Stable lifting coordination"
+    },
+    5: {
+        "enabled": True,   # Level 5: Transport precision
+        "schedule_type": "linear",
+        "start_entropy": 0.008,
+        "end_entropy": 0.0003,
+        "description": "Precise transport without drops"
+    },
+    6: {
+        "enabled": True,   # Level 6: Lowering precision
+        "schedule_type": "linear",
+        "start_entropy": 0.006,
+        "end_entropy": 0.0003,
+        "description": "Controlled lowering"
+    },
+    7: {
+        "enabled": True,   # Level 7: Final placement precision
+        "schedule_type": "linear",
+        "start_entropy": 0.005,
+        "end_entropy": 0.0001,
+        "description": "Maximum precision for task completion"
+    }
+}
+
 def get_level_config(level: int) -> dict:
     """Get configuration for a specific curriculum level."""
     if level not in CURRICULUM_LEVELS:
@@ -237,3 +286,9 @@ def get_max_timesteps(level: int) -> int:
 def get_advancement_criteria(level: int) -> dict:
     """Get advancement criteria for a level."""
     return get_level_config(level)["advancement"]
+
+def get_entropy_schedule_config(level: int) -> dict:
+    """Get entropy scheduling configuration for a level."""
+    if level not in ENTROPY_SCHEDULES:
+        return {"enabled": False}
+    return ENTROPY_SCHEDULES[level]

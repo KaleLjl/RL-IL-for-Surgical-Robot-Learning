@@ -23,7 +23,8 @@ import dvrk_gym
 from dvrk_gym.utils.wrappers import FlattenDictObsWrapper
 
 # Import from current directory
-from curriculum_config import get_level_config, get_ppo_params, get_max_timesteps, ENV_CONFIG, TRAINING_CONFIG
+from curriculum_config import get_level_config, get_ppo_params, get_max_timesteps, ENV_CONFIG, TRAINING_CONFIG, get_entropy_schedule_config
+from entropy_scheduling import get_entropy_schedule, SCHEDULES
 
 
 class SimpleProgressCallback(BaseCallback):
@@ -125,6 +126,35 @@ def train_simple(args):
     progress_callback = SimpleProgressCallback(level=level, log_freq=50)
     callbacks.append(progress_callback)
     
+    # Entropy scheduling callback (automatic based on level config)
+    entropy_callback = None
+    entropy_config = get_entropy_schedule_config(level)
+    
+    # Use command line args if provided, otherwise use config
+    if args.entropy_schedule:
+        # Manual override via command line
+        entropy_callback = get_entropy_schedule(
+            schedule_type=args.entropy_schedule,
+            total_timesteps=total_timesteps,
+            start_ent=args.start_entropy,
+            end_ent=args.end_entropy
+        )
+        callbacks.append(entropy_callback)
+        print(f"  Entropy Schedule: {args.entropy_schedule} ({args.start_entropy} → {args.end_entropy}) [Manual]")
+    elif entropy_config.get("enabled", False):
+        # Automatic based on level configuration
+        entropy_callback = get_entropy_schedule(
+            schedule_type=entropy_config["schedule_type"],
+            total_timesteps=total_timesteps,
+            start_ent=entropy_config["start_entropy"],
+            end_ent=entropy_config["end_entropy"]
+        )
+        callbacks.append(entropy_callback)
+        print(f"  Entropy Schedule: {entropy_config['schedule_type']} ({entropy_config['start_entropy']} → {entropy_config['end_entropy']}) [Auto]")
+        print(f"    Description: {entropy_config.get('description', 'N/A')}")
+    else:
+        print(f"  Entropy Schedule: Disabled")
+    
     # Checkpoint callback
     checkpoint_callback = CheckpointCallback(
         save_freq=TRAINING_CONFIG["checkpoint_frequency"],
@@ -214,6 +244,28 @@ def main():
         type=str,
         default=None,
         help="Custom name for this training run (will be added to timestamp)"
+    )
+    
+    parser.add_argument(
+        "--entropy-schedule",
+        type=str,
+        choices=['linear', 'exponential', 'stepwise'],
+        default=None,
+        help="Enable entropy scheduling (reduces exploration over time)"
+    )
+    
+    parser.add_argument(
+        "--start-entropy",
+        type=float,
+        default=0.01,
+        help="Starting entropy coefficient (default: 0.01)"
+    )
+    
+    parser.add_argument(
+        "--end-entropy", 
+        type=float,
+        default=0.0001,
+        help="Ending entropy coefficient (default: 0.0001)"
     )
     
     args = parser.parse_args()
