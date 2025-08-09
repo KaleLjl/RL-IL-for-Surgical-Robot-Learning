@@ -188,8 +188,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
     # Directory arguments
     parser.add_argument('--output-dir', type=str, default='results/experiments',
                        help='Base directory for experiment outputs')
-    parser.add_argument('--demo-dir', type=str, default='demonstrations',
-                       help='Directory containing expert demonstrations')
+    # Demo directory is now fixed as 'data/' - removed --demo-dir argument
     
     # Training arguments
     parser.add_argument('--seed', type=int,

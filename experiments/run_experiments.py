@@ -76,7 +76,6 @@ class ExperimentRunner:
             '--algorithm', algorithm,
             '--output-dir', str(exp_dir),
             '--experiment-name', name,
-            '--demo-dir', 'demonstrations',
             '--no-tensorboard'
         ]
         

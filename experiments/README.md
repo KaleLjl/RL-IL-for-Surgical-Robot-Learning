@@ -12,9 +12,9 @@ experiments/
 ├── configs/                 # Configuration files
 │   ├── base/               # Base configurations for each algorithm
 │   └── experiments/        # Experiment-specific configs
-├── demonstrations/          # Expert demonstration data
-│   ├── expert_demo_needle_reach.pkl
-│   └── expert_demo_peg_transfer.pkl
+├── data/                    # Expert demonstration data
+│   ├── expert_data_needle_reach.pkl
+│   └── expert_data_peg_transfer.pkl
 ├── utils/                  # Utility modules
 │   ├── config_parser.py    # Configuration management
 │   └── logger.py           # Logging utilities
@@ -29,8 +29,7 @@ Train a BC model on Needle Reach:
 ```bash
 python3 train_unified.py \
   --config configs/experiments/standard/bc_needle_reach.yaml \
-  --task needle_reach \
-  --demo-dir demonstrations
+  --task needle_reach
 ```
 
 Train with custom parameters:
@@ -39,7 +38,6 @@ python3 train_unified.py \
   --config configs/base/bc_base.yaml \
   --task peg_transfer \
   --algorithm bc \
-  --demo-dir demonstrations \
   --override training.peg_transfer.epochs=50 training.peg_transfer.learning_rate=1e-3
 ```
 
@@ -128,7 +126,7 @@ logging:
 
 **Optional Arguments:**
 - `--algorithm` - Algorithm override (`bc`, `ppo`, `ppo_bc`)
-- `--demo-dir` - Directory containing expert demonstrations (default: `demonstrations`)
+- Demonstrations are automatically loaded from `data/` directory
 - `--output-dir` - Base directory for outputs (default: `results/experiments`)
 - `--experiment-name` - Custom experiment name
 - `--seed` - Random seed override
@@ -405,7 +403,7 @@ The infrastructure is designed to work seamlessly with Docker:
 
 ```bash
 # Run training in Docker container
-docker exec dvrk_dev bash -c "cd /app/experiments && python3 train_unified.py --config configs/base/bc_base.yaml --task needle_reach --demo-dir demonstrations --no-tensorboard"
+docker exec dvrk_dev bash -c "cd /app/experiments && python3 train_unified.py --config configs/base/bc_base.yaml --task needle_reach --no-tensorboard"
 
 # Run evaluation in Docker
 docker exec dvrk_dev bash -c "cd /app/experiments && python3 evaluate_unified.py --model results/experiments/[experiment]/models/bc_final.zip --task needle_reach --algorithm bc"
@@ -415,15 +413,17 @@ docker exec dvrk_dev bash -c "cd /app/experiments && python3 evaluate_unified.py
 
 ### Data Requirements
 
-- Expert demonstrations must be available in `demonstrations/` directory
-- Demonstration files should be named: `expert_demo_[task].pkl`
+- Expert demonstrations must be available in `data/` directory
+- Demonstration files should be named: `expert_data_[task].pkl`
 - Current format: List of dictionaries with `obs` and `acts` keys
 
 **Generating Demonstrations:**
 ```bash
-# First, generate expert demonstrations
+# Generate expert demonstrations (saves to data/ directory)
 python3 generate_expert_data_needle_reach.py
 python3 generate_expert_data_peg_transfer.py
+
+# Training scripts automatically load from data/expert_data_{task}.pkl
 ```
 
 ### Memory and Compute
@@ -437,7 +437,7 @@ python3 generate_expert_data_peg_transfer.py
 
 - All paths should be absolute or relative to the `experiments/` directory
 - Models are automatically saved with timestamps and config hashes
-- Use `--demo-dir demonstrations` when running from `experiments/` directory
+- Expert demonstrations are automatically loaded from `experiments/data/` directory
 
 ## 🔍 Troubleshooting
 
@@ -464,12 +464,461 @@ Check the training logs for detailed error messages:
 tail -f results/experiments/[experiment]/training.log
 ```
 
-## 📚 Next Steps
+## 📈 Step-by-Step Guide: Systematic Results Generation
 
-1. **Run Standard Experiments**: Start with configs in `experiments/standard/`
-2. **Hyperparameter Sweeps**: Use batch runner for systematic parameter exploration
-3. **Multi-Seed Validation**: Run multiple seeds for statistical significance
-4. **Result Analysis**: Use the generated CSV and JSON files for your thesis results
-5. **Custom Experiments**: Create your own configs for specific research questions
+This section provides a complete roadmap for generating comprehensive experimental results for your thesis Chapter 4.
 
-For questions or issues, check the training logs and ensure all paths and dependencies are correctly set up.
+### 🎯 Phase 1: Data Preparation
+
+**Step 1: Generate Expert Demonstrations**
+```bash
+# Generate demonstrations for both tasks
+python3 generate_expert_data_needle_reach.py
+python3 generate_expert_data_peg_transfer.py
+
+# Verify data files exist
+ls -la data/expert_data_*.pkl
+```
+
+**Step 2: Validate Demonstrations**
+```bash
+# Quick test with minimal training to ensure data loads correctly
+python3 train_unified.py --config configs/base/bc_base.yaml --task needle_reach \
+  --override training.needle_reach.epochs=1
+```
+
+### 🧪 Phase 2: Standard Training Experiments
+
+**Step 3: Create Standard Experiment Configs**
+
+First, create optimized configs for each algorithm-task combination:
+
+```bash
+# Create BC standard configs
+cat > configs/experiments/standard/bc_needle_reach_final.yaml << 'EOF'
+algorithm: "bc"
+seed: 42
+
+network:
+  needle_reach:
+    hidden_sizes: [256, 256]
+    activation: "relu"
+
+training:
+  needle_reach:
+    epochs: 200
+    batch_size: 64
+    learning_rate: 1.0e-4
+    weight_decay: 1.0e-4
+
+data:
+  num_demonstrations: 100
+
+logging:
+  tensorboard: true
+  csv_logging: true
+  save_freq: 20
+EOF
+
+cat > configs/experiments/standard/bc_peg_transfer_final.yaml << 'EOF'
+algorithm: "bc"
+seed: 42
+
+network:
+  peg_transfer:
+    hidden_sizes: [128, 128]
+    activation: "relu"
+
+training:
+  peg_transfer:
+    epochs: 25
+    batch_size: 64
+    learning_rate: 5.0e-5
+    weight_decay: 1.0e-3
+
+data:
+  num_demonstrations: 100
+
+logging:
+  tensorboard: true
+  csv_logging: true
+  save_freq: 5
+EOF
+```
+
+**Step 4: Run Standard Training**
+```bash
+# BC on both tasks
+python3 train_unified.py --config configs/experiments/standard/bc_needle_reach_final.yaml --task needle_reach
+python3 train_unified.py --config configs/experiments/standard/bc_peg_transfer_final.yaml --task peg_transfer
+
+# PPO on needle reach (known to work)
+python3 train_unified.py --config configs/base/ppo_base.yaml --task needle_reach
+
+# Document PPO failure on peg transfer
+python3 train_unified.py --config configs/base/ppo_base.yaml --task peg_transfer --override training.peg_transfer.total_timesteps=50000
+# Expected: Document that PPO fails to learn peg transfer within reasonable time
+```
+
+### 🔍 Phase 3: Hyperparameter Sensitivity Analysis
+
+**Step 5: BC Network Size Sensitivity**
+```bash
+cat > configs/experiments/sensitivity/bc_network_sensitivity.yaml << 'EOF'
+task: needle_reach
+algorithm: bc
+base_config: "base/bc_base.yaml"
+
+experiments:
+  - name: "bc_small_64x64"
+    network:
+      needle_reach:
+        hidden_sizes: [64, 64]
+  
+  - name: "bc_medium_128x128"
+    network:
+      needle_reach:
+        hidden_sizes: [128, 128]
+  
+  - name: "bc_standard_256x256"
+    network:
+      needle_reach:
+        hidden_sizes: [256, 256]
+  
+  - name: "bc_large_512x512"
+    network:
+      needle_reach:
+        hidden_sizes: [512, 512]
+EOF
+
+# Run network sensitivity analysis
+python3 run_experiments.py configs/experiments/sensitivity/bc_network_sensitivity.yaml
+```
+
+**Step 6: BC Learning Rate Sensitivity**
+```bash
+cat > configs/experiments/sensitivity/bc_lr_sensitivity.yaml << 'EOF'
+task: needle_reach
+algorithm: bc
+base_config: "base/bc_base.yaml"
+
+experiments:
+  - name: "bc_lr_1e-5"
+    training:
+      needle_reach:
+        learning_rate: 1.0e-5
+  
+  - name: "bc_lr_5e-5"
+    training:
+      needle_reach:
+        learning_rate: 5.0e-5
+  
+  - name: "bc_lr_1e-4"
+    training:
+      needle_reach:
+        learning_rate: 1.0e-4
+  
+  - name: "bc_lr_5e-4"
+    training:
+      needle_reach:
+        learning_rate: 5.0e-4
+  
+  - name: "bc_lr_1e-3"
+    training:
+      needle_reach:
+        learning_rate: 1.0e-3
+EOF
+
+python3 run_experiments.py configs/experiments/sensitivity/bc_lr_sensitivity.yaml
+```
+
+**Step 7: PPO+BC Beta Sensitivity** *(Future Implementation)*
+```bash
+# Template for when PPO+BC is implemented
+cat > configs/experiments/sensitivity/ppo_bc_beta_sensitivity.yaml << 'EOF'
+task: needle_reach
+algorithm: ppo_bc
+base_config: "base/ppo_bc_base.yaml"
+
+experiments:
+  - name: "ppo_bc_beta_0.01"
+    bc:
+      bc_loss_weight:
+        needle_reach: 0.01
+  
+  - name: "ppo_bc_beta_0.02"
+    bc:
+      bc_loss_weight:
+        needle_reach: 0.02
+  
+  - name: "ppo_bc_beta_0.05"
+    bc:
+      bc_loss_weight:
+        needle_reach: 0.05
+  
+  - name: "ppo_bc_beta_0.1"
+    bc:
+      bc_loss_weight:
+        needle_reach: 0.1
+EOF
+
+# python3 run_experiments.py configs/experiments/sensitivity/ppo_bc_beta_sensitivity.yaml
+```
+
+### 🧬 Phase 4: Ablation Studies
+
+**Step 8: PPO+BC Initialization Ablation** *(Future Implementation)*
+```bash
+cat > configs/experiments/ablation/ppo_bc_initialization.yaml << 'EOF'
+task: needle_reach
+algorithm: ppo_bc
+base_config: "base/ppo_bc_base.yaml"
+
+experiments:
+  - name: "ppo_bc_random_init"
+    bc:
+      use_bc_initialization: false
+      bc_model_path: null
+  
+  - name: "ppo_bc_pretrained_init"
+    bc:
+      use_bc_initialization: true
+      bc_model_path: "results/experiments/[bc_model_path]/models/bc_final.zip"
+EOF
+
+# python3 run_experiments.py configs/experiments/ablation/ppo_bc_initialization.yaml
+```
+
+### 📊 Phase 5: Sample Efficiency Analysis
+
+**Step 9: Varying Demonstration Counts for BC**
+```bash
+cat > configs/experiments/sample_efficiency/bc_demo_count.yaml << 'EOF'
+task: needle_reach
+algorithm: bc
+base_config: "base/bc_base.yaml"
+
+experiments:
+  - name: "bc_demos_25"
+    data:
+      num_demonstrations: 25
+    training:
+      needle_reach:
+        epochs: 100  # Fewer epochs for less data
+  
+  - name: "bc_demos_50"
+    data:
+      num_demonstrations: 50
+    training:
+      needle_reach:
+        epochs: 150
+  
+  - name: "bc_demos_100"
+    data:
+      num_demonstrations: 100
+    training:
+      needle_reach:
+        epochs: 200
+  
+  - name: "bc_demos_150"
+    data:
+      num_demonstrations: 150
+    training:
+      needle_reach:
+        epochs: 250
+
+# Note: You'll need to modify the data loading to support subset sampling
+EOF
+
+# First implement subset sampling in train_unified.py, then run:
+# python3 run_experiments.py configs/experiments/sample_efficiency/bc_demo_count.yaml
+```
+
+### 🎲 Phase 6: Multi-Seed Statistical Validation
+
+**Step 10: Multi-Seed Runs for Statistical Significance**
+```bash
+# Create script for multi-seed runs
+cat > run_multiseed.sh << 'EOF'
+#!/bin/bash
+
+SEEDS=(42 123 456 789 999)
+CONFIG=$1
+TASK=$2
+BASE_NAME=$3
+
+for seed in "${SEEDS[@]}"; do
+    echo "Running seed $seed..."
+    python3 train_unified.py \
+        --config "$CONFIG" \
+        --task "$TASK" \
+        --seed $seed \
+        --experiment-name "${BASE_NAME}_seed_${seed}"
+done
+EOF
+
+chmod +x run_multiseed.sh
+
+# Run multi-seed experiments for key results
+./run_multiseed.sh configs/experiments/standard/bc_needle_reach_final.yaml needle_reach bc_needle_reach_multiseed
+./run_multiseed.sh configs/experiments/standard/bc_peg_transfer_final.yaml peg_transfer bc_peg_transfer_multiseed
+```
+
+### 📈 Phase 7: Results Analysis and Visualization
+
+**Step 11: Extract Training Metrics**
+```bash
+# Create analysis script
+cat > analyze_results.py << 'EOF'
+import json
+import pandas as pd
+import matplotlib.pyplot as plt
+from pathlib import Path
+
+def analyze_batch_results(batch_dir):
+    """Analyze results from batch experiments."""
+    results_file = Path(batch_dir) / 'results.json'
+    
+    if results_file.exists():
+        with open(results_file, 'r') as f:
+            data = json.load(f)
+        
+        # Extract success rates
+        success_rates = []
+        for exp in data:
+            if 'evaluation' in exp and 'metrics' in exp['evaluation']:
+                success_rates.append({
+                    'name': exp['name'],
+                    'success_rate': exp['evaluation']['metrics']['success_rate'],
+                    'mean_reward': exp['evaluation']['metrics']['mean_reward']
+                })
+        
+        return pd.DataFrame(success_rates)
+    
+    return None
+
+# Usage:
+# df = analyze_batch_results('results/experiments/batch_[timestamp]')
+# print(df.describe())
+EOF
+```
+
+**Step 12: Generate Thesis Figures and Tables**
+```bash
+# Create comprehensive results summary
+cat > generate_thesis_results.py << 'EOF'
+import json
+import pandas as pd
+import numpy as np
+from pathlib import Path
+
+def generate_results_table():
+    """Generate LaTeX table for thesis."""
+    
+    # Collect all evaluation results
+    results = []
+    
+    # Scan all experiment directories
+    for exp_dir in Path('results/experiments').glob('*'):
+        if exp_dir.is_dir() and 'batch_' not in exp_dir.name:
+            eval_file = exp_dir / 'evaluations' / 'evaluation_*.json'
+            eval_files = list(exp_dir.glob('evaluations/evaluation_*.json'))
+            
+            if eval_files:
+                with open(eval_files[0], 'r') as f:
+                    data = json.load(f)
+                
+                results.append({
+                    'algorithm': data['algorithm'],
+                    'task': data['task'],
+                    'success_rate': data['metrics']['success_rate'] * 100,
+                    'success_rate_ci': data['metrics'].get('success_rate_ci', 0) * 100,
+                    'mean_reward': data['metrics']['mean_reward'],
+                    'mean_length': data['metrics']['mean_length']
+                })
+    
+    df = pd.DataFrame(results)
+    
+    # Generate LaTeX table
+    latex_table = df.groupby(['algorithm', 'task']).agg({
+        'success_rate': ['mean', 'std'],
+        'mean_reward': ['mean', 'std'],
+        'mean_length': ['mean', 'std']
+    }).round(2)
+    
+    print("\\begin{table}[h]")
+    print("\\centering")
+    print("\\begin{tabular}{|l|l|c|c|c|}")
+    print("\\hline")
+    print("Algorithm & Task & Success Rate (\\%) & Mean Reward & Mean Length \\\\")
+    print("\\hline")
+    
+    for (algo, task), row in latex_table.iterrows():
+        success_mean = row[('success_rate', 'mean')]
+        success_std = row[('success_rate', 'std')]
+        reward_mean = row[('mean_reward', 'mean')]
+        length_mean = row[('mean_length', 'mean')]
+        
+        print(f"{algo.upper()} & {task.replace('_', ' ').title()} & "
+              f"{success_mean:.1f} $\\pm$ {success_std:.1f} & "
+              f"{reward_mean:.1f} & {length_mean:.1f} \\\\")
+    
+    print("\\hline")
+    print("\\end{tabular}")
+    print("\\caption{Experimental Results Summary}")
+    print("\\label{tab:results}")
+    print("\\end{table}")
+
+if __name__ == "__main__":
+    generate_results_table()
+EOF
+
+python3 generate_thesis_results.py > thesis_results_table.tex
+```
+
+### ✅ Phase 8: Final Verification
+
+**Step 13: Results Checklist**
+
+Ensure you have collected:
+
+- [ ] **Standard Training Results**:
+  - [ ] BC on Needle Reach (success rate, training curves)
+  - [ ] BC on Peg Transfer (success rate, training curves)
+  - [ ] PPO on Needle Reach (success rate, training curves)
+  - [ ] PPO failure documentation on Peg Transfer
+
+- [ ] **Hyperparameter Sensitivity**:
+  - [ ] BC network size sensitivity (64, 128, 256, 512)
+  - [ ] BC learning rate sensitivity (1e-5 to 1e-3)
+  - [ ] PPO+BC β sensitivity *(when implemented)*
+
+- [ ] **Ablation Studies**:
+  - [ ] PPO+BC with/without BC initialization *(when implemented)*
+  - [ ] Different regularization strengths for BC
+
+- [ ] **Sample Efficiency**:
+  - [ ] BC with varying demo counts (25, 50, 100, 150)
+  - [ ] Learning curves showing convergence rates
+
+- [ ] **Statistical Validation**:
+  - [ ] Multi-seed runs (minimum 5 seeds) for key results
+  - [ ] Confidence intervals and significance tests
+
+- [ ] **Analysis Artifacts**:
+  - [ ] Training curves plots
+  - [ ] Comparison tables (LaTeX format)
+  - [ ] Statistical significance results
+  - [ ] Failure analysis summaries
+
+### 🎯 Expected Timeline
+
+- **Phase 1-2** (Data + Standard): 1-2 days
+- **Phase 3** (Sensitivity): 2-3 days  
+- **Phase 4-5** (Ablation + Sample Efficiency): 2-3 days
+- **Phase 6** (Multi-seed): 2-3 days
+- **Phase 7-8** (Analysis): 1-2 days
+
+**Total Estimated Time**: 8-13 days of compute time
+
+This systematic approach will generate comprehensive results for your thesis Chapter 4, demonstrating thorough experimental validation and analysis.

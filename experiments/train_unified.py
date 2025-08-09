@@ -138,9 +138,9 @@ class UnifiedTrainer:
         demo_path = self.config.get('data', {}).get('demo_path')
         
         if not demo_path:
-            # Construct default path
-            demo_file = f"expert_demo_{self.args.task}.pkl"
-            demo_path = Path(self.args.demo_dir) / demo_file
+            # Construct default path to data directory
+            demo_file = f"expert_data_{self.args.task}.pkl"
+            demo_path = Path("data") / demo_file
         else:
             demo_path = Path(demo_path)
         
