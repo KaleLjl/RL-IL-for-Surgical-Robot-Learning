@@ -9,9 +9,15 @@ experiments/
 ├── train_unified.py         # Main training script for all algorithms
 ├── evaluate_unified.py      # Unified evaluation script
 ├── run_experiments.py       # Batch experiment runner
+├── hyperopt_unified.py      # Hyperparameter optimization using Optuna
 ├── configs/                 # Configuration files
 │   ├── base/               # Base configurations for each algorithm
 │   └── experiments/        # Experiment-specific configs
+│       ├── hyperparameter/ # Hyperparameter optimization configs
+│       ├── standard/       # Best hyperparameters for each task
+│       ├── sensitivity/    # Hyperparameter sensitivity analysis
+│       ├── ablation/       # Component ablation studies
+│       └── sample_efficiency/ # Varying demonstration counts
 ├── data/                    # Expert demonstration data
 │   ├── expert_data_needle_reach.pkl
 │   └── expert_data_peg_transfer.pkl
@@ -59,6 +65,34 @@ Run multiple experiments from a batch config:
 python3 run_experiments.py configs/experiments/sensitivity/bc_needle_reach_lr_sweep.yaml
 ```
 
+### 4. Hyperparameter Optimization 🔬
+
+**NEW**: Automated hyperparameter optimization using Optuna with Tree-structured Parzen Estimator (TPE):
+
+#### Single Algorithm Optimization
+```bash
+# Optimize BC hyperparameters for needle_reach
+python3 hyperopt_unified.py --algorithm bc --task needle_reach --n-trials 50
+
+# Optimize PPO hyperparameters for needle_reach  
+python3 hyperopt_unified.py --algorithm ppo --task needle_reach --n-trials 30
+
+# Optimize PPO+BC (requires trained BC model)
+python3 hyperopt_unified.py --algorithm ppo_bc --task needle_reach --n-trials 30 \
+  --bc-model-path results/hyperopt/bc_needle_reach_*/models/bc_final.zip
+```
+
+#### Sequential Optimization (Recommended)
+```bash
+# Automatic BC → PPO+BC sequential optimization
+python3 hyperopt_unified.py --stage sequential --task needle_reach \
+  --bc-trials 50 --ppo-bc-trials 30
+
+# For peg_transfer (more challenging task)
+python3 hyperopt_unified.py --stage sequential --task peg_transfer \
+  --bc-trials 50 --ppo-bc-trials 30
+```
+
 ## 📋 Supported Algorithms
 
 | Algorithm | Status | Description |
@@ -81,6 +115,7 @@ Located in `configs/base/`, these define default parameters:
 
 Located in `configs/experiments/`:
 
+- `hyperparameter/` - Automated hyperparameter optimization configs
 - `standard/` - Best hyperparameters for each task
 - `sensitivity/` - Hyperparameter sensitivity analysis
 - `ablation/` - Component ablation studies
@@ -191,6 +226,53 @@ python3 evaluate_unified.py \
 python3 run_experiments.py configs/experiments/sensitivity/bc_lr_sweep.yaml
 ```
 
+### Hyperparameter Optimizer (`hyperopt_unified.py`) 🔬
+
+**NEW**: Automated hyperparameter optimization using Optuna with intelligent search algorithms.
+
+**Required Arguments:**
+- `--algorithm` - Algorithm to optimize (`bc`, `ppo`, `ppo_bc`)
+- `--task` - Task name (`needle_reach`, `peg_transfer`)
+
+**Optional Arguments:**
+- `--stage` - Optimization stage (`bc`, `ppo_bc`, `sequential`) 
+- `--n-trials` - Number of optimization trials (default: 50)
+- `--bc-model-path` - Path to BC model for `ppo_bc` stage
+- `--study-name` - Custom study name
+- `--output-dir` - Output directory (default: `results/hyperopt`)
+
+**Sequential Mode Arguments:**
+- `--bc-trials` - Number of BC trials (default: 50)
+- `--ppo-bc-trials` - Number of PPO+BC trials (default: 30)
+
+**Examples:**
+```bash
+# Single algorithm optimization
+python3 hyperopt_unified.py --algorithm bc --task needle_reach --n-trials 50
+
+# Sequential optimization (recommended workflow)
+python3 hyperopt_unified.py --stage sequential --task needle_reach \
+  --bc-trials 50 --ppo-bc-trials 30
+
+# PPO+BC with specific BC model
+python3 hyperopt_unified.py --algorithm ppo_bc --task needle_reach \
+  --bc-model-path results/hyperopt/bc_best/models/bc_final.zip \
+  --n-trials 30
+```
+
+**Features:**
+- **TPE (Tree-structured Parzen Estimator)**: Smart hyperparameter search
+- **Early Pruning**: Stops poor trials early to save compute time
+- **Multi-objective**: Optimizes success rate as primary metric
+- **Visualization**: Automatic generation of optimization plots
+- **Sequential Workflow**: BC optimization → PPO+BC optimization
+- **Reproducible**: Fixed seeds and complete experiment tracking
+
+**Search Spaces:**
+- **BC**: Network size, learning rate, batch size, weight decay, epochs
+- **PPO**: All PPO parameters + network architecture + training timesteps
+- **PPO+BC**: PPO parameters + BC loss weight + BC update frequency
+
 ## 📊 Output Structure
 
 ### Single Experiment Output
@@ -221,6 +303,30 @@ results/experiments/batch_[timestamp]/
     └── [experiment_2]/
 ```
 
+### Hyperparameter Optimization Output
+```
+results/hyperopt/[study_name]/
+├── study.json                     # Complete Optuna study results
+├── optimal_config_[algo]_[task].yaml  # Best hyperparameters found
+├── trials.csv                     # All trials in tabular format
+├── optimization_history.html      # Interactive optimization plot
+├── parameter_importance.html      # Parameter importance analysis
+├── parallel_coordinates.html      # Multi-dimensional visualization
+└── [individual_trial_dirs]/       # Each trial's full training output
+
+# Sequential optimization output
+results/hyperopt/sequential_[task]_[timestamp]/
+├── sequential_summary_[task]_[timestamp].json  # Complete sequential results
+├── bc_optimization/               # BC optimization study
+│   ├── study.json
+│   ├── optimal_config_bc_[task].yaml
+│   └── [visualizations]
+└── ppo_bc_optimization/           # PPO+BC optimization study
+    ├── study.json
+    ├── optimal_config_ppo_bc_[task].yaml
+    └── [visualizations]
+```
+
 ## 🧪 Experiment Types
 
 ### 1. Standard Training
@@ -237,9 +343,22 @@ python3 train_unified.py --config configs/experiments/standard/ppo_needle_reach.
 python3 train_unified.py --config configs/experiments/standard/ppo_peg_transfer.yaml --task peg_transfer
 ```
 
-### 2. Hyperparameter Sensitivity
+### 2. Hyperparameter Sensitivity & Optimization
 
-Test robustness to hyperparameter choices:
+#### Automated Optimization (Recommended) 🔬
+Use Optuna for intelligent hyperparameter search:
+
+```bash
+# Automated BC optimization
+python3 hyperopt_unified.py --algorithm bc --task needle_reach --n-trials 50
+
+# Sequential BC → PPO+BC optimization
+python3 hyperopt_unified.py --stage sequential --task needle_reach \
+  --bc-trials 50 --ppo-bc-trials 30
+```
+
+#### Manual Sensitivity Analysis
+Test specific hyperparameter ranges:
 
 ```bash
 # Learning rate sweep for BC
@@ -562,6 +681,8 @@ python3 train_unified.py --config configs/base/ppo_base.yaml --task peg_transfer
 
 ### 🔍 Phase 3: Hyperparameter Sensitivity Analysis
 
+**⚠️ Important**: Complete hyperparameter tuning BEFORE ablation and sample efficiency studies to ensure optimal baseline parameters.
+
 **Step 5: BC Network Size Sensitivity**
 ```bash
 cat > configs/experiments/sensitivity/bc_network_sensitivity.yaml << 'EOF'
@@ -665,9 +786,135 @@ EOF
 # python3 run_experiments.py configs/experiments/sensitivity/ppo_bc_beta_sensitivity.yaml
 ```
 
-### 🧬 Phase 4: Ablation Studies
+### 🎯 Phase 4: Create Optimized Standard Configurations
 
-**Step 8: PPO+BC Initialization Ablation** *(Future Implementation)*
+**⚠️ Critical Step**: After completing sensitivity analysis, create optimized standard configs with the best hyperparameters found.
+
+**Step 8: Analyze Sensitivity Results and Identify Optimal Parameters**
+```bash
+# Analyze batch results to find best hyperparameters
+python3 << 'EOF'
+import json
+import pandas as pd
+from pathlib import Path
+
+def find_best_hyperparameters(batch_dir):
+    """Find best hyperparameters from sensitivity analysis."""
+    results_file = Path(batch_dir) / 'results.json'
+    
+    if results_file.exists():
+        with open(results_file, 'r') as f:
+            data = json.load(f)
+        
+        # Extract success rates for each experiment
+        results = []
+        for exp in data:
+            if 'evaluation' in exp and 'metrics' in exp['evaluation']:
+                results.append({
+                    'name': exp['name'], 
+                    'success_rate': exp['evaluation']['metrics']['success_rate'],
+                    'mean_reward': exp['evaluation']['metrics']['mean_reward']
+                })
+        
+        df = pd.DataFrame(results)
+        best_config = df.loc[df['success_rate'].idxmax()]
+        
+        print("="*50)
+        print("BEST HYPERPARAMETERS FOUND:")
+        print("="*50)
+        print(f"Best Config: {best_config['name']}")
+        print(f"Success Rate: {best_config['success_rate']*100:.1f}%")
+        print(f"Mean Reward: {best_config['mean_reward']:.2f}")
+        print("="*50)
+        
+        return best_config
+
+# Usage:
+# best = find_best_hyperparameters('results/experiments/batch_[timestamp]')
+EOF
+```
+
+**Step 9: Create Optimized Standard Configurations**
+```bash
+# Based on sensitivity analysis results, create optimized configs
+# Example: If bc_lr_5e-5 and bc_network_256x256 performed best
+
+cat > configs/experiments/standard/bc_needle_reach_optimized.yaml << 'EOF'
+algorithm: "bc"
+seed: 42
+
+network:
+  needle_reach:
+    hidden_sizes: [256, 256]  # Best from network sensitivity
+    activation: "relu"
+
+training:
+  needle_reach:
+    epochs: 200               # Sufficient for convergence
+    batch_size: 64
+    learning_rate: 5.0e-5     # Best from LR sensitivity
+    weight_decay: 1.0e-4      # Best from regularization analysis
+    early_stopping_patience: 20
+    early_stopping_threshold: 0.001
+
+data:
+  num_demonstrations: 100
+
+logging:
+  tensorboard: true
+  csv_logging: true
+  save_freq: 20
+  verbose: 1
+EOF
+
+cat > configs/experiments/standard/bc_peg_transfer_optimized.yaml << 'EOF' 
+algorithm: "bc"
+seed: 42
+
+network:
+  peg_transfer:
+    hidden_sizes: [128, 128]  # Best from network sensitivity
+    activation: "relu"
+
+training:
+  peg_transfer:
+    epochs: 25                # Best from convergence analysis  
+    batch_size: 64
+    learning_rate: 5.0e-5     # Best from LR sensitivity
+    weight_decay: 1.0e-3      # Higher regularization for complex task
+    early_stopping_patience: 10
+    early_stopping_threshold: 0.001
+
+data:
+  num_demonstrations: 100
+
+logging:
+  tensorboard: true
+  csv_logging: true 
+  save_freq: 5
+  verbose: 1
+EOF
+```
+
+**Step 10: Validate Optimized Configurations**
+```bash
+# Test optimized configs with multiple seeds to ensure robustness
+for seed in 42 123 456; do
+    python3 train_unified.py \
+        --config configs/experiments/standard/bc_needle_reach_optimized.yaml \
+        --task needle_reach \
+        --seed $seed \
+        --experiment-name "bc_needle_reach_optimized_seed_${seed}"
+done
+
+# Verify consistent high performance across seeds
+```
+
+### 🧬 Phase 5: Ablation Studies
+
+**⚠️ Important**: Use optimized standard configurations as the baseline for all ablation studies to ensure fair comparisons.
+
+**Step 11: PPO+BC Initialization Ablation** *(Future Implementation)*
 ```bash
 cat > configs/experiments/ablation/ppo_bc_initialization.yaml << 'EOF'
 task: needle_reach
@@ -689,9 +936,11 @@ EOF
 # python3 run_experiments.py configs/experiments/ablation/ppo_bc_initialization.yaml
 ```
 
-### 📊 Phase 5: Sample Efficiency Analysis
+### 📊 Phase 6: Sample Efficiency Analysis  
 
-**Step 9: Varying Demonstration Counts for BC**
+**⚠️ Important**: Use optimized standard configurations as the baseline for all sample efficiency studies.
+
+**Step 12: Varying Demonstration Counts for BC**
 ```bash
 cat > configs/experiments/sample_efficiency/bc_demo_count.yaml << 'EOF'
 task: needle_reach
@@ -734,9 +983,9 @@ EOF
 # python3 run_experiments.py configs/experiments/sample_efficiency/bc_demo_count.yaml
 ```
 
-### 🎲 Phase 6: Multi-Seed Statistical Validation
+### 🎲 Phase 7: Multi-Seed Statistical Validation
 
-**Step 10: Multi-Seed Runs for Statistical Significance**
+**Step 13: Multi-Seed Runs for Statistical Significance**
 ```bash
 # Create script for multi-seed runs
 cat > run_multiseed.sh << 'EOF'
@@ -759,14 +1008,14 @@ EOF
 
 chmod +x run_multiseed.sh
 
-# Run multi-seed experiments for key results
-./run_multiseed.sh configs/experiments/standard/bc_needle_reach_final.yaml needle_reach bc_needle_reach_multiseed
-./run_multiseed.sh configs/experiments/standard/bc_peg_transfer_final.yaml peg_transfer bc_peg_transfer_multiseed
+# Run multi-seed experiments for key results using OPTIMIZED configs
+./run_multiseed.sh configs/experiments/standard/bc_needle_reach_optimized.yaml needle_reach bc_needle_reach_multiseed
+./run_multiseed.sh configs/experiments/standard/bc_peg_transfer_optimized.yaml peg_transfer bc_peg_transfer_multiseed
 ```
 
-### 📈 Phase 7: Results Analysis and Visualization
+### 📈 Phase 8: Results Analysis and Visualization
 
-**Step 11: Extract Training Metrics**
+**Step 14: Extract Training Metrics**
 ```bash
 # Create analysis script
 cat > analyze_results.py << 'EOF'
@@ -803,7 +1052,7 @@ def analyze_batch_results(batch_dir):
 EOF
 ```
 
-**Step 12: Generate Thesis Figures and Tables**
+**Step 15: Generate Thesis Figures and Tables**
 ```bash
 # Create comprehensive results summary
 cat > generate_thesis_results.py << 'EOF'
@@ -876,9 +1125,9 @@ EOF
 python3 generate_thesis_results.py > thesis_results_table.tex
 ```
 
-### ✅ Phase 8: Final Verification
+### ✅ Phase 9: Final Verification
 
-**Step 13: Results Checklist**
+**Step 16: Results Checklist**
 
 Ensure you have collected:
 
@@ -914,11 +1163,99 @@ Ensure you have collected:
 ### 🎯 Expected Timeline
 
 - **Phase 1-2** (Data + Standard): 1-2 days
-- **Phase 3** (Sensitivity): 2-3 days  
-- **Phase 4-5** (Ablation + Sample Efficiency): 2-3 days
-- **Phase 6** (Multi-seed): 2-3 days
-- **Phase 7-8** (Analysis): 1-2 days
+- **Phase 3** (Hyperparameter Sensitivity): 2-3 days
+- **Phase 4** (Create Optimized Configs): 0.5-1 day  
+- **Phase 5-6** (Ablation + Sample Efficiency): 2-3 days
+- **Phase 7** (Multi-seed): 2-3 days
+- **Phase 8-9** (Analysis + Verification): 1-2 days
 
-**Total Estimated Time**: 8-13 days of compute time
+**Total Estimated Time**: 9-15 days of compute time
+
+### 🔄 **Key Methodological Insight**:
+
+**Hyperparameter Optimization First** → **Then Ablation/Sample Efficiency**
+
+This ensures that ablation studies and sample efficiency analyses are conducted with optimal baseline parameters, leading to more reliable and interpretable results for your thesis.
 
 This systematic approach will generate comprehensive results for your thesis Chapter 4, demonstrating thorough experimental validation and analysis.
+
+## 🔬 Hyperparameter Optimization Methodology
+
+### Why Use Automated Optimization?
+
+The new `hyperopt_unified.py` script provides **significant advantages** over manual hyperparameter tuning:
+
+1. **Efficiency**: Tree-structured Parzen Estimator (TPE) is ~10x more efficient than grid search
+2. **Intelligence**: Learns from previous trials to suggest better hyperparameters
+3. **Early Stopping**: Automatically prunes poor-performing trials to save compute time
+4. **Reproducibility**: Complete experiment tracking with seeds and configurations
+5. **Visualization**: Automatic generation of optimization plots for thesis figures
+
+### Integration with 8-Phase Plan
+
+The hyperparameter optimization seamlessly integrates with your systematic experimental plan:
+
+**Replace Phase 3 (Manual Hyperparameter Sensitivity) with:**
+```bash
+# Phase 3: Automated Hyperparameter Optimization
+python3 hyperopt_unified.py --stage sequential --task needle_reach --bc-trials 50 --ppo-bc-trials 30
+python3 hyperopt_unified.py --stage sequential --task peg_transfer --bc-trials 50 --ppo-bc-trials 30
+```
+
+**Timeline Impact:**
+- **Manual approach**: Phase 3 = 2-3 days compute time
+- **Automated approach**: Phase 3 = 1-2 days compute time (with better results)
+- **Total time saved**: 1-2 days while finding superior hyperparameters
+
+### Sequential Optimization Workflow
+
+1. **Stage 1 - BC Optimization**: Find optimal BC hyperparameters
+   - Search space: Network architecture, learning rate, batch size, regularization
+   - Optimize for: Maximum success rate on evaluation episodes
+   - Output: Best BC model + optimal configuration
+
+2. **Stage 2 - PPO+BC Integration**: Optimize hybrid algorithm using best BC
+   - Search space: PPO parameters + BC loss weight + integration frequency
+   - Fixed: BC model from Stage 1 (optimal foundation)
+   - Optimize for: Maximum success rate improvement over BC alone
+
+### Thesis Benefits
+
+Using automated hyperparameter optimization provides several advantages for your thesis:
+
+1. **Methodological Rigor**: Demonstrates state-of-the-art optimization techniques
+2. **Statistical Validity**: Multiple trials with different hyperparameters strengthen conclusions
+3. **Reproducibility**: Complete hyperparameter search history and reasoning
+4. **Time Efficiency**: More experiments in less time = more comprehensive results
+5. **Publication Quality**: Optuna visualizations make excellent thesis figures
+
+### Quick Start for Phase 3 Replacement
+
+Instead of manual sensitivity analysis, run:
+
+```bash
+# Install dependencies (if not already installed)
+cd /home/lele/Desktop/Master-Project/summer_project
+pip install -e .
+
+# Generate expert demonstrations (Phase 1)
+cd experiments
+python3 generate_expert_data_needle_reach.py
+python3 generate_expert_data_peg_transfer.py
+
+# Run automated hyperparameter optimization (Phase 3 replacement)
+python3 hyperopt_unified.py --stage sequential --task needle_reach \
+  --bc-trials 50 --ppo-bc-trials 30 \
+  --output-dir results/hyperopt
+
+python3 hyperopt_unified.py --stage sequential --task peg_transfer \
+  --bc-trials 50 --ppo-bc-trials 30 \
+  --output-dir results/hyperopt
+
+# Results will be in:
+# - results/hyperopt/bc_needle_reach_*/optimal_config_bc_needle_reach.yaml
+# - results/hyperopt/ppo_bc_needle_reach_*/optimal_config_ppo_bc_needle_reach.yaml
+# - Plus comprehensive visualizations and analysis
+```
+
+This automated approach replaces the manual Phase 3 while providing superior hyperparameter discovery and comprehensive experimental documentation for your thesis.

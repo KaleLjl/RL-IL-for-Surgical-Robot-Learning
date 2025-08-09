@@ -1,0 +1,81 @@
+# PPO Hyperparameter Optimization Configuration for Needle Reach
+# Usage: python3 hyperopt_unified.py --algorithm ppo --task needle_reach --n-trials 30
+
+# Base algorithm configuration
+algorithm: "ppo"
+seed: 42
+
+# This config serves as template - hyperopt_unified.py will override these values
+# during optimization based on the search spaces defined in the script
+
+network:
+  needle_reach:
+    hidden_sizes: [256, 256]  # Will be optimized: [128,128], [256,256], [512,512]
+    activation: "relu"        # Will be optimized: ["relu", "tanh"]
+
+training:
+  needle_reach:
+    total_timesteps: 100000   # Will be optimized: range [50000, 200000]
+    learning_rate: 3.0e-4     # Will be optimized: log range [1e-5, 1e-3]
+    n_steps: 2048             # Will be optimized: [1024, 2048, 4096]
+    batch_size: 64            # Will be optimized: [64, 128, 256]
+    n_epochs: 10              # Will be optimized: range [5, 20]
+    gamma: 0.99               # Will be optimized: range [0.95, 0.999]
+    gae_lambda: 0.95
+    clip_range: 0.2           # Will be optimized: range [0.1, 0.3]
+    ent_coef: 0.0             # Will be optimized: log range [1e-8, 1e-2]
+    vf_coef: 0.5
+    max_grad_norm: 0.5
+
+logging:
+  tensorboard: false        # Disabled during optimization for speed
+  csv_logging: true
+  save_freq: 10000
+  verbose: 0               # Minimal logging during optimization
+
+# Optimization metadata (not used by train_unified.py)
+hyperopt:
+  objective: "success_rate"  # Primary metric to optimize
+  direction: "maximize"
+  n_trials: 30
+  timeout: 10800            # 3 hours per trial max (PPO takes longer)
+  search_space:
+    hidden_sizes: 
+      type: "categorical"
+      choices: [[128,128], [256,256], [512,512]]
+    activation:
+      type: "categorical" 
+      choices: ["relu", "tanh"]
+    learning_rate:
+      type: "float"
+      low: 1.0e-5
+      high: 1.0e-3
+      log: true
+    n_steps:
+      type: "categorical"
+      choices: [1024, 2048, 4096]
+    batch_size:
+      type: "categorical"
+      choices: [64, 128, 256]
+    n_epochs:
+      type: "int"
+      low: 5
+      high: 20
+    gamma:
+      type: "float"
+      low: 0.95
+      high: 0.999
+    clip_range:
+      type: "float"
+      low: 0.1
+      high: 0.3
+    ent_coef:
+      type: "float"
+      low: 1.0e-8
+      high: 1.0e-2
+      log: true
+    total_timesteps:
+      type: "int"
+      low: 50000
+      high: 200000
+      step: 10000

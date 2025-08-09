@@ -1,0 +1,115 @@
+# Sequential Hyperparameter Optimization Examples
+# These configs show how to run sequential BC -> PPO+BC optimization
+
+# Example 1: Sequential optimization for Needle Reach
+# Usage: python3 hyperopt_unified.py --stage sequential --task needle_reach --bc-trials 50 --ppo-bc-trials 30
+
+sequential_needle_reach:
+  task: "needle_reach"
+  stage: "sequential"
+  bc_trials: 50           # Number of trials for BC optimization
+  ppo_bc_trials: 30       # Number of trials for PPO+BC optimization
+  output_dir: "results/hyperopt"
+  
+  # BC optimization configuration
+  bc_config:
+    algorithm: "bc"
+    n_trials: 50
+    timeout: 7200         # 2 hours per BC trial
+    search_space:
+      hidden_sizes: [[128,128], [256,256], [512,512], [128,256,128], [256,512,256]]
+      activation: ["relu", "tanh"]
+      learning_rate: [1e-5, 1e-3]  # log scale
+      batch_size: [32, 64, 128]
+      weight_decay: [1e-6, 1e-3]
+      epochs: [75, 300]
+      early_stopping_patience: [5, 20]
+  
+  # PPO+BC optimization configuration (uses best BC model)
+  ppo_bc_config:
+    algorithm: "ppo_bc"
+    n_trials: 30
+    timeout: 10800        # 3 hours per PPO+BC trial
+    search_space:
+      learning_rate: [1e-5, 1e-3]
+      n_steps: [1024, 2048]
+      batch_size: [64, 128]
+      n_epochs: [5, 15]
+      gamma: [0.95, 0.999]
+      clip_range: [0.1, 0.3]
+      ent_coef: [1e-8, 1e-2]
+      total_timesteps: [50000, 150000]
+      bc_loss_weight: [0.001, 0.1]
+      bc_update_frequency: [1, 10]
+
+# Example 2: Sequential optimization for Peg Transfer  
+sequential_peg_transfer:
+  task: "peg_transfer"
+  stage: "sequential"
+  bc_trials: 50
+  ppo_bc_trials: 30
+  output_dir: "results/hyperopt"
+  
+  # BC optimization configuration (more conservative for complex task)
+  bc_config:
+    algorithm: "bc"
+    n_trials: 50
+    timeout: 7200
+    search_space:
+      hidden_sizes: [[64,64], [128,128], [256,256], [64,128,64], [128,256,128]]
+      activation: ["relu", "tanh"]
+      learning_rate: [1e-6, 1e-4]  # lower range for peg transfer
+      batch_size: [32, 64, 128]
+      weight_decay: [1e-6, 1e-3]
+      epochs: [12, 50]              # lower max epochs
+      early_stopping_patience: [5, 20]
+  
+  # PPO+BC optimization configuration
+  ppo_bc_config:
+    algorithm: "ppo_bc"
+    n_trials: 30
+    timeout: 14400        # 4 hours per trial (peg transfer takes longer)
+    search_space:
+      learning_rate: [1e-5, 1e-3]
+      n_steps: [1024, 2048]
+      batch_size: [64, 128]
+      n_epochs: [5, 15]
+      gamma: [0.95, 0.999]
+      clip_range: [0.1, 0.3]
+      ent_coef: [1e-8, 1e-2]
+      total_timesteps: [100000, 300000]  # longer training for complex task
+      bc_loss_weight: [0.001, 0.1]
+      bc_update_frequency: [1, 10]
+
+# Quick test configuration (for development/testing)
+sequential_quick_test:
+  task: "needle_reach"
+  stage: "sequential"
+  bc_trials: 5           # Small number for testing
+  ppo_bc_trials: 3       # Small number for testing
+  output_dir: "results/hyperopt/test"
+  
+  bc_config:
+    timeout: 1800         # 30 minutes per trial
+    search_space:
+      hidden_sizes: [[128,128], [256,256]]
+      activation: ["relu"]
+      learning_rate: [1e-4, 1e-3]
+      batch_size: [64]
+      weight_decay: [1e-4]
+      epochs: [50, 100]
+      early_stopping_patience: [10]
+  
+  ppo_bc_config:
+    timeout: 3600         # 1 hour per trial
+    search_space:
+      learning_rate: [1e-4, 1e-3]
+      n_steps: [2048]
+      batch_size: [64]
+      n_epochs: [10]
+      gamma: [0.99]
+      clip_range: [0.2]
+      ent_coef: [0.0]
+      total_timesteps: [50000, 100000]
+      bc_loss_weight: [0.01, 0.05]
+      bc_update_frequency: [1, 5]
