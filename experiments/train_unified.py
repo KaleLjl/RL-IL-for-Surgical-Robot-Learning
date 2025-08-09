@@ -104,22 +104,23 @@ class UnifiedTrainer:
         Returns:
             Gymnasium environment
         """
-        env_config = self.config.get('env', {})
+        import gymnasium as gym
         
+        # Use gym.make to get proper TimeLimit wrapper (like old scripts)
         if self.args.task == 'needle_reach':
-            env_class = NeedleReachEnv
+            env_name = 'NeedleReach-v0'
         elif self.args.task == 'peg_transfer':
-            env_class = PegTransferEnv
+            env_name = 'PegTransfer-v0'
         else:
             raise ValueError(f"Unknown task: {self.args.task}")
         
-        # Create environment
+        # Create environment with proper wrappers
         def make_env():
-            return env_class(render_mode=None)
+            return gym.make(env_name)
         
-        # Use vectorized environment for PPO
+        # Use vectorized environment for PPO  
         if self.config['algorithm'] in ['ppo', 'ppo_bc']:
-            n_envs = env_config.get('n_envs', 4)
+            n_envs = self.config.get('env', {}).get('n_envs', 4)
             if n_envs > 1:
                 env = SubprocVecEnv([make_env for _ in range(n_envs)])
             else:
@@ -207,80 +208,122 @@ class UnifiedTrainer:
         """Train using Behavioral Cloning."""
         self.logger.log_info("Starting BC training")
         
-        # Load demonstrations
-        trajectories = self.load_demonstrations()
+        # Load raw demonstrations
+        demo_path = f"data/expert_data_{self.args.task}.pkl"
+        self.logger.log_info(f"Loading demonstrations from: {demo_path}")
+        
+        import pickle
+        with open(demo_path, 'rb') as f:
+            trajectories = pickle.load(f)
+        
+        # Apply the EXACT working solution from old_scripts/train_bc.py
+        # Flatten Dict observations into a single array to avoid imitation library issues
+        self.logger.log_info("Flattening Dict observations into a single array...")
+        
+        all_obs = []
+        all_next_obs = []
+        all_acts = []
+        all_dones = []
+
+        for traj in trajectories:
+            obs_soa = traj["obs"]
+            num_transitions = len(traj["acts"])
+
+            # Flatten each observation dictionary into a single numpy array
+            for i in range(num_transitions):
+                flat_obs = np.concatenate([
+                    obs_soa['observation'][i],
+                    obs_soa['achieved_goal'][i],
+                    obs_soa['desired_goal'][i]
+                ])
+                all_obs.append(flat_obs)
+                
+                flat_next_obs = np.concatenate([
+                    obs_soa['observation'][i+1],
+                    obs_soa['achieved_goal'][i+1],
+                    obs_soa['desired_goal'][i+1]
+                ])
+                all_next_obs.append(flat_next_obs)
+
+            all_acts.extend(traj["acts"])
+            dones = [False] * (num_transitions - 1) + [True]
+            all_dones.extend(dones)
+
+        # Convert lists to numpy arrays
+        all_obs = np.array(all_obs)
+        all_next_obs = np.array(all_next_obs)
+        all_acts = np.array(all_acts)
+        all_dones = np.array(all_dones)
+
+        # Convert to imitation library format
+        from imitation.data.types import Transitions
+        transitions = Transitions(
+            obs=all_obs,
+            acts=all_acts,
+            next_obs=all_next_obs,
+            dones=all_dones,
+            infos=np.array([{} for _ in range(len(all_obs))]),
+        )
+        self.logger.log_info(f"Data flattened and converted to Transitions format: {len(transitions)} samples.")
         
         # Get task-specific config
         task_config = self.config['training'].get(self.args.task, {})
         network_config = self.config['network'].get(self.args.task, {})
         
-        # Convert trajectories to transitions for BC
-        from imitation.data.types import Transitions
+        # Create flattened observation space
+        import gymnasium as gym
+        from stable_baselines3.common.policies import ActorCriticPolicy as MlpPolicy
         
-        all_obs = []
-        all_acts = []
-        all_next_obs = []
-        all_dones = []
-        
-        for traj in trajectories:
-            obs = traj['observations']
-            acts = traj['actions']
-            
-            all_obs.extend(obs[:-1])
-            all_acts.extend(acts)
-            all_next_obs.extend(obs[1:])
-            all_dones.extend([False] * (len(obs) - 2) + [True])
-        
-        transitions = Transitions(
-            obs=np.array(all_obs),
-            acts=np.array(all_acts),
-            next_obs=np.array(all_next_obs),
-            dones=np.array(all_dones),
-            infos=[{}] * len(all_obs)
+        flat_obs_space = gym.spaces.Box(
+            low=-np.inf, high=np.inf, shape=all_obs.shape[1:], dtype=np.float32
         )
         
-        # Create BC trainer with flattened observation space
-        import torch
+        # Create custom policy with network architecture (like old script)
+        learning_rate = task_config.get('learning_rate', 1e-4)
+        weight_decay = task_config.get('weight_decay', 1e-4)
+        hidden_sizes = network_config.get('hidden_sizes', [256, 256])
+        
+        policy = MlpPolicy(
+            observation_space=flat_obs_space,
+            action_space=self.env.action_space,
+            lr_schedule=lambda _: learning_rate,
+            net_arch=hidden_sizes,
+            optimizer_kwargs={
+                "weight_decay": weight_decay,
+                "eps": 1e-8,
+            },
+        )
+        
+        # Create BC trainer with custom policy
         self.model = bc.BC(
-            observation_space=gym.spaces.Box(
-                low=-np.inf, high=np.inf,
-                shape=(all_obs[0].shape[0],), dtype=np.float32
-            ),
+            observation_space=flat_obs_space,
             action_space=self.env.action_space,
             demonstrations=transitions,
+            policy=policy,
             batch_size=task_config.get('batch_size', 64),
-            optimizer_kwargs={'lr': task_config.get('learning_rate', 1e-4)},
-            l2_weight=task_config.get('weight_decay', 1e-4),
             rng=np.random.default_rng(self.config.get('seed', 42))
         )
         
-        # Training loop
+        # Training - use the simple approach from old script
         n_epochs = task_config.get('epochs', 100)
-        log_interval = self.config['logging'].get('log_interval', 10)
+        log_interval = task_config.get('log_interval', 10)
         
-        metrics_tracker = MetricsTracker()
+        self.logger.log_info(f"Starting BC training for {n_epochs} epochs...")
+        self.logger.log_info(f"Training data: {len(transitions)} samples")
+        self.logger.log_info(f"Hyperparameters: LR={learning_rate}, net_arch={hidden_sizes}, weight_decay={weight_decay}")
         
-        for epoch in range(n_epochs):
-            # Train for one epoch
-            self.model.train(n_epochs=1)
+        try:
+            # Use BC's built-in training with logging
+            self.model.train(n_epochs=n_epochs, log_interval=log_interval)
+            self.logger.log_info("BC training completed successfully")
             
-            # Get training metrics from logger if available
-            # Note: BC loss is logged automatically by imitation library
-            metrics_tracker.update('bc_loss', 0)  # Placeholder - real metrics in TensorBoard
-            
-            # Log metrics
-            if epoch % log_interval == 0:
-                avg_loss = metrics_tracker.get_average('bc_loss')
-                self.logger.log_scalar('train/bc_loss', avg_loss, epoch)
-                self.logger.log_info(f"Epoch {epoch}/{n_epochs}, Loss: {avg_loss:.4f}")
-            
-            # Save checkpoint
-            if epoch % self.config['logging'].get('save_freq', 10) == 0:
-                self.save_model(f"bc_epoch_{epoch}.zip")
+        except Exception as e:
+            self.logger.log_error(f"BC training failed: {str(e)}")
+            raise e
         
         # Save final model
         self.save_model("bc_final.zip")
-        self.logger.log_info("BC training completed")
+        self.logger.log_info("BC model saved")
     
     def train_ppo(self):
         """Train using PPO."""

@@ -91,14 +91,19 @@ class UnifiedEvaluator:
         Returns:
             Gymnasium environment
         """
-        render_mode = 'human' if self.render else None
+        import gymnasium as gym
         
+        # Use gym.make to get proper TimeLimit wrapper (consistent with training)
         if self.task == 'needle_reach':
-            env = NeedleReachEnv(render_mode=render_mode)
+            env_name = 'NeedleReach-v0'
         elif self.task == 'peg_transfer':
-            env = PegTransferEnv(render_mode=render_mode)
+            env_name = 'PegTransfer-v0'
         else:
             raise ValueError(f"Unknown task: {self.task}")
+        
+        # Create environment with proper wrappers
+        # Note: render_mode handling may need adjustment
+        env = gym.make(env_name)
         
         return env
     
@@ -131,34 +136,11 @@ class UnifiedEvaluator:
         Returns:
             BC policy from SB3
         """
-        # Load BC model as SB3 policy
+        # Use the exact same approach as the old working script
         from stable_baselines3.common.policies import ActorCriticPolicy
         
-        # The BC model is saved as an SB3 policy
-        from stable_baselines3 import PPO  # Use PPO to load the policy format
-        
-        # Create a dummy environment that mimics the flattened observation space
-        import gymnasium as gym
-        from gymnasium import spaces
-        
-        class DummyEnv(gym.Env):
-            def __init__(self, obs_space, act_space):
-                self.observation_space = obs_space
-                self.action_space = act_space
-            
-            def reset(self):
-                return self.observation_space.sample(), {}
-            
-            def step(self, action):
-                return self.observation_space.sample(), 0, False, False, {}
-        
-        flat_obs_space = spaces.Box(low=-np.inf, high=np.inf, shape=(15,), dtype=np.float32)
-        dummy_env = DummyEnv(flat_obs_space, self.env.action_space)
-        dummy_ppo = PPO('MlpPolicy', dummy_env, verbose=0)
-        
-        # Load the policy state dict
-        policy = dummy_ppo.policy
-        policy.load(str(self.model_path))
+        # Load the policy directly (like old script)
+        policy = ActorCriticPolicy.load(str(self.model_path))
         
         return policy
     
