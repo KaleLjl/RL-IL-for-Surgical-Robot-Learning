@@ -1,0 +1,13 @@
+algorithm: bc
+experiments:
+- name: bc_test_1
+  training:
+    needle_reach:
+      epochs: 3
+      learning_rate: 0.0001
+- name: bc_test_2
+  training:
+    needle_reach:
+      epochs: 3
+      learning_rate: 5.0e-05
+task: needle_reach

@@ -1,0 +1,17 @@
+# Test batch configuration
+task: needle_reach
+algorithm: bc
+base_config: "base/bc_base.yaml"
+
+experiments:
+  - name: "bc_test_1"
+    training:
+      needle_reach:
+        epochs: 3
+        learning_rate: 1.0e-4
+  
+  - name: "bc_test_2"
+    training:
+      needle_reach:
+        epochs: 3
+        learning_rate: 5.0e-5

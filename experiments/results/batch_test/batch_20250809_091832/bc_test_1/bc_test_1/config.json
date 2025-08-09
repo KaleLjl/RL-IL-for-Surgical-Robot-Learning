@@ -1,0 +1,49 @@
+{
+  "algorithm": "bc",
+  "data": {
+    "demo_path": null,
+    "num_demonstrations": 100
+  },
+  "logging": {
+    "csv_logging": true,
+    "log_interval": 10,
+    "save_freq": 10,
+    "tensorboard": true,
+    "verbose": 1
+  },
+  "network": {
+    "needle_reach": {
+      "activation": "relu",
+      "hidden_sizes": [
+        256,
+        256
+      ]
+    },
+    "peg_transfer": {
+      "activation": "relu",
+      "hidden_sizes": [
+        128,
+        128
+      ]
+    }
+  },
+  "seed": 42,
+  "training": {
+    "needle_reach": {
+      "batch_size": 64,
+      "early_stopping_patience": 20,
+      "early_stopping_threshold": 0.001,
+      "epochs": 3,
+      "learning_rate": 0.0001,
+      "weight_decay": 0.0001
+    },
+    "peg_transfer": {
+      "batch_size": 64,
+      "early_stopping_patience": 10,
+      "early_stopping_threshold": 0.001,
+      "epochs": 25,
+      "learning_rate": 5e-05,
+      "weight_decay": 0.001
+    }
+  }
+}
