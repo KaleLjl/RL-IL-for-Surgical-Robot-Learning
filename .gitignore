@@ -121,7 +121,8 @@ venv.bak/
 .vscode/
 
 # Data and models
-/data/
+experiments/data/
+experiments/results/
 /models/
 /archive/
 /logs/

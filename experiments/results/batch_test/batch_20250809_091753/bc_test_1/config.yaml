@@ -1,4 +1,0 @@
-training:
-  needle_reach:
-    epochs: 3
-    learning_rate: 0.0001

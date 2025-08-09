@@ -4,6 +4,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: dvrk_dev
+    user: "1000:1000"
     volumes:
       # Mount the entire project directory
       - ..:/app
