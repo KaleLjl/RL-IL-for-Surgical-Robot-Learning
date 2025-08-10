@@ -404,9 +404,149 @@ class UnifiedTrainer:
         """Train using PPO with BC."""
         self.logger.log_info("Starting PPO+BC training")
         
-        # This would require custom implementation
-        # For now, raise NotImplementedError
-        raise NotImplementedError("PPO+BC training requires custom implementation")
+        # Import custom PPO+BC implementation
+        from dvrk_gym.algorithms.ppo_bc import PPOWithBCLoss
+        from imitation.data import types as imitation_types
+        
+        # Load expert demonstrations for BC loss
+        trajectories = self.load_demonstrations()
+        
+        # Convert trajectories to transitions for BC loss
+        all_obs = []
+        all_acts = []
+        for traj in trajectories:
+            # Handle trajectory format - could be dict or Trajectory object
+            if hasattr(traj, 'obs'):
+                obs = traj.obs[:-1]  # Exclude terminal observation  
+                acts = traj.acts
+            else:
+                # Dictionary format from load_demonstrations
+                obs = traj['observations'][:-1]  # Exclude terminal observation
+                acts = traj['actions']
+            all_obs.extend(obs)
+            all_acts.extend(acts)
+        
+        all_obs = np.array(all_obs, dtype=np.float32)
+        all_acts = np.array(all_acts, dtype=np.float32)
+        
+        # Create transitions object for PPOWithBCLoss
+        # Create dummy arrays for required fields
+        n_samples = len(all_obs)
+        dummy_infos = [{} for _ in range(n_samples)]
+        dummy_next_obs = np.zeros_like(all_obs)
+        dummy_dones = np.zeros(n_samples, dtype=bool)
+        
+        expert_transitions = imitation_types.Transitions(
+            obs=all_obs,
+            acts=all_acts,
+            infos=dummy_infos,
+            next_obs=dummy_next_obs,
+            dones=dummy_dones
+        )
+        
+        self.logger.log_info(f"Loaded {len(expert_transitions.obs)} expert samples for BC loss")
+        
+        # Get configuration
+        task_config = self.config['training'].get(self.args.task, {})
+        network_config = self.config['network'].get(self.args.task, {})
+        bc_config = self.config.get('bc', {})
+        
+        # Get BC-specific parameters
+        bc_loss_weight_dict = bc_config.get('bc_loss_weight', {})
+        bc_loss_weight = bc_loss_weight_dict.get(self.args.task, 0.01)
+        bc_batch_size = bc_config.get('bc_batch_size', 256)
+        bc_update_frequency = bc_config.get('bc_update_frequency', 1)
+        use_bc_initialization = bc_config.get('use_bc_initialization', False)
+        bc_model_path = bc_config.get('bc_model_path')
+        
+        # Create PPO+BC model with same parameters as PPO
+        self.model = PPOWithBCLoss(
+            policy='MlpPolicy',
+            env=self.env,
+            expert_demonstrations=expert_transitions,
+            bc_loss_weight=bc_loss_weight,
+            bc_batch_size=bc_batch_size,
+            learning_rate=task_config.get('learning_rate', 3e-4),
+            n_steps=task_config.get('n_steps', 2048),
+            batch_size=task_config.get('batch_size', 64),
+            n_epochs=task_config.get('n_epochs', 10),
+            gamma=task_config.get('gamma', 0.99),
+            gae_lambda=task_config.get('gae_lambda', 0.95),
+            clip_range=task_config.get('clip_range', 0.2),
+            clip_range_vf=task_config.get('clip_range_vf', None),
+            normalize_advantage=task_config.get('normalize_advantage', True),
+            ent_coef=task_config.get('ent_coef', 0.0),
+            vf_coef=task_config.get('vf_coef', 0.5),
+            max_grad_norm=task_config.get('max_grad_norm', 0.5),
+            use_sde=task_config.get('use_sde', False),
+            sde_sample_freq=task_config.get('sde_sample_freq', -1),
+            policy_kwargs=dict(
+                net_arch=network_config.get('hidden_sizes', [256, 256])
+            ),
+            verbose=self.config['logging'].get('verbose', 1),
+            seed=self.config.get('seed', 42),
+            device='auto',
+            tensorboard_log=self.logger.tensorboard_dir if not self.args.no_tensorboard else None
+        )
+        
+        # Optionally initialize with BC model
+        if use_bc_initialization and bc_model_path:
+            if Path(bc_model_path).exists():
+                self.logger.log_info(f"Initializing PPO+BC with BC model: {bc_model_path}")
+                try:
+                    # Load BC model weights
+                    import pickle
+                    with open(bc_model_path, 'rb') as f:
+                        bc_data = pickle.load(f)
+                    # Initialize policy network with BC weights
+                    # This would require extracting weights from BC model
+                    # For now, we'll skip this step
+                    self.logger.log_info("BC initialization not fully implemented yet")
+                except Exception as e:
+                    self.logger.log_info(f"Could not load BC model: {e}")
+            else:
+                self.logger.log_info(f"BC model not found at {bc_model_path}, starting from scratch")
+        
+        # Setup callbacks
+        callbacks = []
+        
+        # Checkpoint callback
+        if self.config['logging'].get('save_freq', 10000) > 0:
+            checkpoint_callback = CheckpointCallback(
+                save_freq=self.config['logging']['save_freq'],
+                save_path=str(self.model_dir),
+                name_prefix='ppo_bc_checkpoint'
+            )
+            callbacks.append(checkpoint_callback)
+        
+        # Evaluation callback
+        if self.config['logging'].get('eval_freq', 5000) > 0:
+            eval_env = self.create_environment()
+            eval_callback = EvalCallback(
+                eval_env,
+                best_model_save_path=str(self.model_dir),
+                log_path=str(self.eval_dir),
+                eval_freq=self.config['logging'].get('eval_freq', 5000),
+                n_eval_episodes=self.config['logging'].get('eval_episodes', 10),
+                deterministic=True
+            )
+            callbacks.append(eval_callback)
+        
+        # Train
+        total_timesteps = task_config.get('total_timesteps', 100000)
+        self.logger.log_info(f"Training PPO+BC for {total_timesteps} timesteps")
+        self.logger.log_info(f"BC loss weight: {bc_loss_weight}")
+        self.logger.log_info(f"BC batch size: {bc_batch_size}")
+        
+        self.model.learn(
+            total_timesteps=total_timesteps,
+            callback=callbacks,
+            progress_bar=True
+        )
+        
+        # Save final model
+        self.save_model("ppo_bc_final.zip")
+        self.logger.log_info("PPO+BC training completed")
     
     def create_bc_policy(self, network_config: Dict[str, Any]):
         """Create BC policy network.

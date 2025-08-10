@@ -37,7 +37,8 @@ class HyperparameterOptimizer:
                  n_trials: int = 50,
                  study_name: Optional[str] = None,
                  bc_model_path: Optional[str] = None,
-                 output_dir: str = "experiments/results/hyperopt_phase3"):
+                 experiments_dir: str = "/app/experiments/results/experiments",
+                 analysis_dir: str = "/app/experiments/results/hyperopt_phase3"):
         """Initialize hyperparameter optimizer.
         
         Args:
@@ -47,14 +48,16 @@ class HyperparameterOptimizer:
             n_trials: Number of optimization trials
             study_name: Custom study name
             bc_model_path: Path to BC model for ppo_bc stage
-            output_dir: Output directory for results
+            experiments_dir: Directory for individual trial experiments
+            analysis_dir: Directory for final analysis files
         """
         self.algorithm = algorithm
         self.task = task
         self.stage = stage
         self.n_trials = n_trials
         self.bc_model_path = bc_model_path
-        self.output_dir = Path(output_dir)
+        self.experiments_dir = Path(experiments_dir)  # For individual trial results
+        self.analysis_dir = Path(analysis_dir)        # For final analysis files
         
         # Create study name
         if study_name:
@@ -63,9 +66,10 @@ class HyperparameterOptimizer:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             self.study_name = f"{algorithm}_{task}_{stage}_{timestamp}"
         
-        # Create output directory
-        self.study_dir = self.output_dir / self.study_name
+        # Create both directories
+        self.study_dir = self.analysis_dir / self.study_name  # Analysis files go here
         self.study_dir.mkdir(parents=True, exist_ok=True)
+        self.experiments_dir.mkdir(parents=True, exist_ok=True)  # Ensure experiments dir exists
         
         # Initialize study
         self.study = optuna.create_study(
@@ -204,8 +208,8 @@ class HyperparameterOptimizer:
         clip_range = trial.suggest_float('clip_range', 0.1, 0.3)
         ent_coef = trial.suggest_float('ent_coef', 1e-8, 1e-2, log=True)
         
-        # Reduced timesteps for faster optimization (20-50k instead of 50-100k)
-        total_timesteps = trial.suggest_int('total_timesteps', 20000, 50000, step=10000)
+        # Use 100k timesteps for fair comparison (matching old script)
+        total_timesteps = trial.suggest_int('total_timesteps', 100000, 100000, step=10000)
         
         return {
             'algorithm': 'ppo',
@@ -286,7 +290,7 @@ class HyperparameterOptimizer:
                     '--task', self.task,
                     '--algorithm', self.algorithm,
                     '--experiment-name', experiment_name,
-                    '--output-dir', 'results/experiments',  # Keep under experiments/
+                    '--output-dir', str(self.experiments_dir),
                     '--no-tensorboard'
                 ]
                 
@@ -313,8 +317,8 @@ class HyperparameterOptimizer:
                     print(f"Error: {result.stderr}")
                     return 0.0
                 
-                # Find the experiment directory
-                exp_dir = Path(f"results/experiments/{experiment_name}")
+                # Find the experiment directory (relative to experiments/ where subprocesses run)
+                exp_dir = Path(__file__).parent / f"results/experiments/{experiment_name}"
                 if not exp_dir.exists():
                     print(f"Experiment directory not found: {exp_dir}")
                     return 0.0
@@ -325,13 +329,15 @@ class HyperparameterOptimizer:
                     print(f"Model not found: {model_path}")
                     return 0.0
                 
+                # Evaluation runs from experiments/ directory, so use relative paths
+                relative_exp_dir = f"results/experiments/{experiment_name}"
                 eval_cmd = [
                     'python3', 'evaluate_unified.py',
-                    '--model', str(model_path),
+                    '--model', f"{relative_exp_dir}/models/{self.algorithm}_final.zip",
                     '--task', self.task,
                     '--algorithm', self.algorithm,
                     '--n-episodes', '50',  # Faster evaluation during optimization
-                    '--output-dir', str(exp_dir / 'evaluations')
+                    '--output-dir', f"{relative_exp_dir}/evaluations"
                 ]
                 
                 eval_result = subprocess.run(
@@ -602,8 +608,10 @@ def main():
                         help='Custom study name')
     parser.add_argument('--bc-model-path', type=str, default=None,
                         help='Path to BC model for ppo_bc stage')
-    parser.add_argument('--output-dir', type=str, default='experiments/results/hyperopt_phase3',
-                        help='Output directory')
+    parser.add_argument('--experiments-dir', type=str, default='/app/experiments/results/experiments',
+                        help='Directory for individual trial experiments')
+    parser.add_argument('--analysis-dir', type=str, default='/app/experiments/results/hyperopt_phase3',
+                        help='Directory for final analysis files')
     parser.add_argument('--bc-trials', type=int, default=50,
                         help='Number of BC trials for sequential optimization')
     parser.add_argument('--ppo-bc-trials', type=int, default=30,
@@ -629,7 +637,8 @@ def main():
             n_trials=args.n_trials,
             study_name=args.study_name,
             bc_model_path=args.bc_model_path,
-            output_dir=args.output_dir
+            experiments_dir=args.experiments_dir,
+            analysis_dir=args.analysis_dir
         )
         
         optimizer.optimize()
