@@ -95,12 +95,12 @@ class UnifiedEvaluator:
         import gymnasium as gym
         
         # Use gym.make to get proper TimeLimit wrapper (consistent with training)
-        # Use dense rewards for PPO/PPO_BC, sparse for BC (consistent with training)
+        # Use sparse rewards for BC and PPO_BC (like old DAPG script), dense for pure PPO
         if self.task == 'needle_reach':
-            if self.algorithm in ['ppo', 'ppo_bc']:
-                env_name = 'NeedleReach-Dense-v0'  # Dense rewards for RL
-            else:
-                env_name = 'NeedleReach-v0'  # Sparse rewards for BC
+            if self.algorithm == 'ppo':
+                env_name = 'NeedleReach-Dense-v0'  # Dense rewards for pure PPO
+            else:  # bc, ppo_bc
+                env_name = 'NeedleReach-v0'  # Sparse rewards for BC and PPO+BC (like old script)
         elif self.task == 'peg_transfer':
             env_name = 'PegTransfer-v0'
         else:

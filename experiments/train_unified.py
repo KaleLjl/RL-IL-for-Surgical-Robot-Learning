@@ -107,12 +107,12 @@ class UnifiedTrainer:
         import gymnasium as gym
         
         # Use gym.make to get proper TimeLimit wrapper (like old scripts)
-        # Use dense rewards for PPO/PPO_BC, sparse for BC
+        # Use sparse rewards for BC and PPO_BC (like old DAPG script), dense for pure PPO
         if self.args.task == 'needle_reach':
-            if self.config['algorithm'] in ['ppo', 'ppo_bc']:
-                env_name = 'NeedleReach-Dense-v0'  # Dense rewards for RL
-            else:
-                env_name = 'NeedleReach-v0'  # Sparse rewards for BC
+            if self.config['algorithm'] == 'ppo':
+                env_name = 'NeedleReach-Dense-v0'  # Dense rewards for pure PPO
+            else:  # bc, ppo_bc
+                env_name = 'NeedleReach-v0'  # Sparse rewards for BC and PPO+BC (like old script)
         elif self.args.task == 'peg_transfer':
             env_name = 'PegTransfer-v0'
         else:
