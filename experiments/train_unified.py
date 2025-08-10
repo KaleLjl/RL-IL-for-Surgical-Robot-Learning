@@ -107,8 +107,12 @@ class UnifiedTrainer:
         import gymnasium as gym
         
         # Use gym.make to get proper TimeLimit wrapper (like old scripts)
+        # Use dense rewards for PPO/PPO_BC, sparse for BC
         if self.args.task == 'needle_reach':
-            env_name = 'NeedleReach-v0'
+            if self.config['algorithm'] in ['ppo', 'ppo_bc']:
+                env_name = 'NeedleReach-Dense-v0'  # Dense rewards for RL
+            else:
+                env_name = 'NeedleReach-v0'  # Sparse rewards for BC
         elif self.args.task == 'peg_transfer':
             env_name = 'PegTransfer-v0'
         else:
@@ -118,13 +122,21 @@ class UnifiedTrainer:
         def make_env():
             return gym.make(env_name)
         
-        # Use vectorized environment for PPO  
+        # Use vectorized environment for PPO with flattened observations (like old script)
         if self.config['algorithm'] in ['ppo', 'ppo_bc']:
+            # Import the exact wrapper used in old script
+            from dvrk_gym.utils.wrappers import FlattenDictObsWrapper
+            
+            def make_env_flattened():
+                base_env = gym.make(env_name)
+                # Apply the same wrapper as successful old script
+                return FlattenDictObsWrapper(base_env)
+            
             n_envs = self.config.get('env', {}).get('n_envs', 4)
             if n_envs > 1:
-                env = SubprocVecEnv([make_env for _ in range(n_envs)])
+                env = SubprocVecEnv([make_env_flattened for _ in range(n_envs)])
             else:
-                env = DummyVecEnv([make_env])
+                env = DummyVecEnv([make_env_flattened])
         else:
             env = make_env()
         
@@ -333,9 +345,10 @@ class UnifiedTrainer:
         task_config = self.config['training'].get(self.args.task, {})
         ppo_config = self.config.get('ppo', {})
         
-        # Create PPO model
+        # Create PPO model with MlpPolicy for flattened observations (like old script)
+        policy_type = 'MlpPolicy'  # For flattened observation spaces (matching old script)
         self.model = PPO(
-            policy='MlpPolicy',
+            policy=policy_type,
             env=self.env,
             learning_rate=task_config.get('learning_rate', 3e-4),
             n_steps=ppo_config.get('n_steps', 2048),

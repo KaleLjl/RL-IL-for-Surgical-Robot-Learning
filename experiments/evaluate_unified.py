@@ -21,6 +21,7 @@ sys.path.insert(0, str(project_root / 'src'))
 
 from dvrk_gym.envs.peg_transfer import PegTransferEnv
 from dvrk_gym.envs.needle_reach import NeedleReachEnv
+from dvrk_gym.utils.wrappers import FlattenDictObsWrapper
 from utils.config_parser import ConfigParser
 from utils.logger import ExperimentLogger
 
@@ -94,8 +95,12 @@ class UnifiedEvaluator:
         import gymnasium as gym
         
         # Use gym.make to get proper TimeLimit wrapper (consistent with training)
+        # Use dense rewards for PPO/PPO_BC, sparse for BC (consistent with training)
         if self.task == 'needle_reach':
-            env_name = 'NeedleReach-v0'
+            if self.algorithm in ['ppo', 'ppo_bc']:
+                env_name = 'NeedleReach-Dense-v0'  # Dense rewards for RL
+            else:
+                env_name = 'NeedleReach-v0'  # Sparse rewards for BC
         elif self.task == 'peg_transfer':
             env_name = 'PegTransfer-v0'
         else:
@@ -103,7 +108,13 @@ class UnifiedEvaluator:
         
         # Create environment with proper wrappers
         # Note: render_mode handling may need adjustment
-        env = gym.make(env_name)
+        base_env = gym.make(env_name)
+        
+        # Add FlattenDictObsWrapper for PPO models (consistent with training)
+        if self.algorithm in ['ppo', 'ppo_bc']:
+            env = FlattenDictObsWrapper(base_env)
+        else:
+            env = base_env
         
         return env
     
@@ -248,7 +259,7 @@ class UnifiedEvaluator:
         if self.task == 'needle_reach':
             # Check if robot got close to target
             final_obs = episode_info['trajectory'][-1] if episode_info['trajectory'] else None
-            if final_obs and isinstance(final_obs, dict):
+            if final_obs is not None and isinstance(final_obs, dict):
                 distance = np.linalg.norm(final_obs['achieved_goal'] - final_obs['desired_goal'])
                 if distance > 0.01:  # 10mm threshold
                     return 'failed_to_reach'

@@ -174,11 +174,13 @@ class HyperparameterOptimizer:
         """Get PPO-specific search space."""
         
         if task == 'needle_reach':
-            total_timesteps_range = (50000, 200000)
+            # Match successful old script: 100k timesteps exactly
+            total_timesteps_range = (100000, 100000)  # Fixed to 100k like old script
             hidden_sizes_options = [[128, 128], [256, 256], [512, 512]]
             
         elif task == 'peg_transfer':
-            total_timesteps_range = (100000, 500000)
+            # Match successful old script: 300k timesteps exactly  
+            total_timesteps_range = (300000, 300000)  # Fixed to 300k like old script
             hidden_sizes_options = [[64, 64], [128, 128], [256, 256]]
             
         else:
@@ -188,16 +190,17 @@ class HyperparameterOptimizer:
         hidden_sizes = trial.suggest_categorical('hidden_sizes', hidden_sizes_options)
         activation = trial.suggest_categorical('activation', ['relu', 'tanh'])
         
-        # PPO hyperparameters
-        learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-3, log=True)
+        # PPO hyperparameters - focused around old script proven values + faster optimization
+        learning_rate = trial.suggest_float('learning_rate', 1e-4, 1e-3, log=True)  # Narrowed around 3e-4
         n_steps = trial.suggest_categorical('n_steps', [1024, 2048, 4096])
-        batch_size = trial.suggest_categorical('batch_size', [64, 128, 256])
+        batch_size = trial.suggest_categorical('batch_size', [32, 64, 128])  # Favor smaller batch sizes
         n_epochs = trial.suggest_int('n_epochs', 5, 20)
         gamma = trial.suggest_float('gamma', 0.95, 0.999)
         clip_range = trial.suggest_float('clip_range', 0.1, 0.3)
         ent_coef = trial.suggest_float('ent_coef', 1e-8, 1e-2, log=True)
         
-        total_timesteps = trial.suggest_int('total_timesteps', *total_timesteps_range, step=10000)
+        # Reduced timesteps for faster optimization (20-50k instead of 50-100k)
+        total_timesteps = trial.suggest_int('total_timesteps', 20000, 50000, step=10000)
         
         return {
             'algorithm': 'ppo',
@@ -289,12 +292,13 @@ class HyperparameterOptimizer:
                     print(f"  {key}: {value}")
                 print(f"{'='*50}")
                 
-                # Run training with timeout
+                # Run training with timeout (increased for PPO)
+                training_timeout = 14400 if self.algorithm == 'ppo' else 7200  # 4 hours for PPO, 2 hours for BC
                 result = subprocess.run(
                     train_cmd,
                     capture_output=True,
                     text=True,
-                    timeout=7200,  # 2 hour timeout
+                    timeout=training_timeout,
                     cwd=Path(__file__).parent
                 )
                 

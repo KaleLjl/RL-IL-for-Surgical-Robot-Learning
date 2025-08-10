@@ -28,6 +28,16 @@ class NeedleReachEnv(DVRKEnv):
     WORKSPACE_LIMITS = ((0.50, 0.60), (-0.05, 0.05), (0.681, 0.745))
     SCALING = 5.
     
+    def __init__(self, render_mode: str = None, use_dense_reward: bool = False):
+        """Initialize the NeedleReach environment.
+        
+        Args:
+            render_mode: Rendering mode for visualization
+            use_dense_reward: Whether to use dense rewards (True for PPO) or sparse rewards (False for BC)
+        """
+        self.use_dense_reward = use_dense_reward
+        super().__init__(render_mode)
+    
     # Constants from the parent PsmEnv in SurRoL
     POSE_PSM1 = ((0.05, 0.24, 0.8024), (0, 0, -(90 + 20) / 180 * np.pi))
     DISTANCE_THRESHOLD = 0.005

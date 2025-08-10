@@ -13,6 +13,13 @@ register(
 )
 
 register(
+    id='NeedleReach-Dense-v0',
+    entry_point='dvrk_gym.envs.needle_reach:NeedleReachEnv',
+    max_episode_steps=100,
+    kwargs={'use_dense_reward': True},
+)
+
+register(
     id='PegTransfer-v0',
     entry_point='dvrk_gym.envs.peg_transfer:PegTransferEnv',
     max_episode_steps=150,
