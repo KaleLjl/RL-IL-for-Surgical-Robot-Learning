@@ -34,7 +34,7 @@ class HyperparameterOptimizer:
                  n_trials: int = 50,
                  study_name: Optional[str] = None,
                  bc_model_path: Optional[str] = None,
-                 output_dir: str = "results/hyperopt"):
+                 output_dir: str = "experiments/results/hyperopt_phase3"):
         """Initialize hyperparameter optimizer.
         
         Args:
@@ -308,7 +308,7 @@ class HyperparameterOptimizer:
                     return 0.0
                 
                 # Find the experiment directory
-                exp_dir = Path(f"results/experiments/{experiment_name}")
+                exp_dir = Path(f"experiments/results/experiments/{experiment_name}")
                 if not exp_dir.exists():
                     print(f"Experiment directory not found: {exp_dir}")
                     return 0.0
@@ -482,7 +482,7 @@ class HyperparameterOptimizer:
             print(f"Warning: Could not generate visualizations: {e}")
 
 
-def sequential_optimization(task: str, bc_trials: int = 50, ppo_bc_trials: int = 30, output_dir: str = "results/hyperopt"):
+def sequential_optimization(task: str, bc_trials: int = 50, ppo_bc_trials: int = 30, output_dir: str = "experiments/results/hyperopt_phase3"):
     """Run sequential optimization: BC first, then PPO+BC.
     
     Args:
@@ -589,7 +589,7 @@ def main():
                         help='Custom study name')
     parser.add_argument('--bc-model-path', type=str, default=None,
                         help='Path to BC model for ppo_bc stage')
-    parser.add_argument('--output-dir', type=str, default='results/hyperopt',
+    parser.add_argument('--output-dir', type=str, default='experiments/results/hyperopt_phase3',
                         help='Output directory')
     parser.add_argument('--bc-trials', type=int, default=50,
                         help='Number of BC trials for sequential optimization')
