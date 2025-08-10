@@ -11,6 +11,9 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 import tempfile
 
+# Fix matplotlib warning
+os.environ['MPLCONFIGDIR'] = '/tmp/matplotlib'
+
 import optuna
 import pandas as pd
 import plotly.graph_objects as go
@@ -111,16 +114,16 @@ class HyperparameterOptimizer:
         # Task-specific parameter ranges
         if task == 'needle_reach':
             hidden_sizes_options = [
-                [128, 128], [256, 256], [512, 512],
-                [128, 256, 128], [256, 512, 256]
+                "128,128", "256,256", "512,512",
+                "128,256,128", "256,512,256"
             ]
             max_epochs = 300
             base_lr_range = (1e-5, 1e-3)
             
         elif task == 'peg_transfer':
             hidden_sizes_options = [
-                [64, 64], [128, 128], [256, 256],
-                [64, 128, 64], [128, 256, 128]
+                "64,64", "128,128", "256,256",
+                "64,128,64", "128,256,128"
             ]
             max_epochs = 50
             base_lr_range = (1e-6, 1e-4)
@@ -129,7 +132,8 @@ class HyperparameterOptimizer:
             raise ValueError(f"Unknown task: {task}")
         
         # Network architecture
-        hidden_sizes = trial.suggest_categorical('hidden_sizes', hidden_sizes_options)
+        hidden_sizes_str = trial.suggest_categorical('hidden_sizes', hidden_sizes_options)
+        hidden_sizes = [int(x) for x in hidden_sizes_str.split(',')]
         activation = trial.suggest_categorical('activation', ['relu', 'tanh'])
         
         # Training hyperparameters
@@ -176,18 +180,19 @@ class HyperparameterOptimizer:
         if task == 'needle_reach':
             # Match successful old script: 100k timesteps exactly
             total_timesteps_range = (100000, 100000)  # Fixed to 100k like old script
-            hidden_sizes_options = [[128, 128], [256, 256], [512, 512]]
+            hidden_sizes_options = ["128,128", "256,256", "512,512"]
             
         elif task == 'peg_transfer':
             # Match successful old script: 300k timesteps exactly  
             total_timesteps_range = (300000, 300000)  # Fixed to 300k like old script
-            hidden_sizes_options = [[64, 64], [128, 128], [256, 256]]
+            hidden_sizes_options = ["64,64", "128,128", "256,256"]
             
         else:
             raise ValueError(f"Unknown task: {task}")
         
         # Network architecture
-        hidden_sizes = trial.suggest_categorical('hidden_sizes', hidden_sizes_options)
+        hidden_sizes_str = trial.suggest_categorical('hidden_sizes', hidden_sizes_options)
+        hidden_sizes = [int(x) for x in hidden_sizes_str.split(',')]
         activation = trial.suggest_categorical('activation', ['relu', 'tanh'])
         
         # PPO hyperparameters - focused around old script proven values + faster optimization
@@ -281,6 +286,7 @@ class HyperparameterOptimizer:
                     '--task', self.task,
                     '--algorithm', self.algorithm,
                     '--experiment-name', experiment_name,
+                    '--output-dir', 'results/experiments',  # Keep under experiments/
                     '--no-tensorboard'
                 ]
                 
@@ -308,7 +314,7 @@ class HyperparameterOptimizer:
                     return 0.0
                 
                 # Find the experiment directory
-                exp_dir = Path(f"experiments/results/experiments/{experiment_name}")
+                exp_dir = Path(f"results/experiments/{experiment_name}")
                 if not exp_dir.exists():
                     print(f"Experiment directory not found: {exp_dir}")
                     return 0.0
@@ -356,6 +362,9 @@ class HyperparameterOptimizer:
                 print(f"Trial {trial.number} Results:")
                 print(f"  Success Rate: {success_rate:.3f}")
                 print(f"  Mean Reward: {mean_reward:.2f}")
+                print(f"  📁 Trial data saved to: {exp_dir}")
+                print(f"  🤖 Model saved to: {model_path}")
+                print(f"  📊 Evaluation results: {eval_file}")
                 
                 # Store additional metrics in trial user attributes
                 trial.set_user_attr('mean_reward', mean_reward)
@@ -405,6 +414,10 @@ class HyperparameterOptimizer:
         # Save results
         self.save_results(best_trial)
         self.generate_visualizations()
+        
+        print(f"\n📋 Study results saved to: {self.study_dir}")
+        print(f"📈 Visualizations saved to: {self.study_dir}")
+        print(f"🏆 Best model located at: {best_trial.user_attrs.get('model_path', 'N/A')}")
         
         return best_params, best_score
     

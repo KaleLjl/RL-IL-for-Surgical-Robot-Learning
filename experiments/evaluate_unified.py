@@ -131,11 +131,11 @@ class UnifiedEvaluator:
             # Load BC model
             model = self.load_bc_model()
         elif self.algorithm == 'ppo':
-            # Load PPO model
-            model = PPO.load(self.model_path, env=self.env)
+            # Load PPO model (without env to avoid mismatch issues)
+            model = PPO.load(self.model_path)
         elif self.algorithm == 'ppo_bc':
-            # Load PPO+BC model (same as PPO for loading)
-            model = PPO.load(self.model_path, env=self.env)
+            # Load PPO+BC model (without env to avoid mismatch issues)
+            model = PPO.load(self.model_path)
         else:
             raise ValueError(f"Unknown algorithm: {self.algorithm}")
         
