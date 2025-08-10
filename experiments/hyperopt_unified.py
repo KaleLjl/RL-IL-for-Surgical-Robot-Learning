@@ -240,20 +240,80 @@ class HyperparameterOptimizer:
         }
     
     def _get_ppo_bc_search_space(self, trial: optuna.trial.Trial, task: str) -> Dict[str, Any]:
-        """Get PPO+BC hybrid search space."""
+        """Get PPO+BC hybrid search space - focused around old DAPG script values."""
         
-        # Start with PPO search space
-        config = self._get_ppo_search_space(trial, task)
-        config['algorithm'] = 'ppo_bc'
+        # PPO+BC hyperparameters focused around old script proven values
+        if task == 'needle_reach':
+            # Old script: timesteps=300000, bc_weight=0.05
+            total_timesteps = trial.suggest_categorical('total_timesteps', [250000, 300000, 350000])
+            bc_loss_weight = trial.suggest_float('bc_loss_weight', 0.02, 0.08)  # Around 0.05
+            hidden_sizes_options = ["512,512"]  # Match best BC config exactly
+            
+        elif task == 'peg_transfer':
+            # Old script: timesteps=500000, bc_weight=0.02  
+            total_timesteps = trial.suggest_categorical('total_timesteps', [400000, 500000, 600000])
+            bc_loss_weight = trial.suggest_float('bc_loss_weight', 0.01, 0.04)  # Around 0.02
+            hidden_sizes_options = ["128,128"]  # Match peg_transfer BC config
+            
+        else:
+            raise ValueError(f"Unknown task: {task}")
         
-        # Add BC-specific parameters
-        bc_loss_weight = trial.suggest_float('bc_loss_weight', 0.001, 0.1, log=True)
-        bc_update_frequency = trial.suggest_int('bc_update_frequency', 1, 10)
+        # Network architecture - match BC exactly
+        hidden_sizes_str = trial.suggest_categorical('hidden_sizes', hidden_sizes_options)
+        hidden_sizes = [int(x) for x in hidden_sizes_str.split(',')]
+        activation = trial.suggest_categorical('activation', ['relu'])  # BC used relu
+        
+        # PPO hyperparameters from old script
+        learning_rate = trial.suggest_float('learning_rate', 5e-5, 2e-4, log=True)  # Around 1e-4
+        n_steps = trial.suggest_categorical('n_steps', [3072, 4096, 5120])  # Around 4096
+        batch_size = trial.suggest_categorical('batch_size', [192, 256, 320])  # Around 256
+        n_epochs = trial.suggest_int('n_epochs', 4, 6)  # Around 5
+        gamma = trial.suggest_float('gamma', 0.98, 0.995)  # Around 0.99
+        clip_range = trial.suggest_float('clip_range', 0.15, 0.25)  # Around 0.2
+        ent_coef = trial.suggest_float('ent_coef', 0.0, 0.01)  # Around 0.0
+        
+        # BC-specific parameters from old script
+        bc_update_frequency = trial.suggest_int('bc_update_frequency', 1, 1)  # Always 1 (every step)
+        bc_batch_size = trial.suggest_categorical('bc_batch_size', [1024])  # Fixed from old script
+        
+        # Create complete config
+        config = {
+            'algorithm': 'ppo_bc',
+            'network': {
+                task: {
+                    'hidden_sizes': hidden_sizes,
+                    'activation': activation
+                }
+            },
+            'training': {
+                task: {
+                    'total_timesteps': total_timesteps,
+                    'learning_rate': learning_rate,
+                    'n_steps': n_steps,
+                    'batch_size': batch_size,
+                    'n_epochs': n_epochs,
+                    'gamma': gamma,
+                    'clip_range': clip_range,
+                    'ent_coef': ent_coef,
+                    # Additional old script parameters
+                    'gae_lambda': 0.95,  # From old script
+                    'vf_coef': 0.5,      # From old script
+                    'max_grad_norm': 0.5, # From old script
+                }
+            },
+            'logging': {
+                'tensorboard': False,
+                'csv_logging': True,
+                'save_freq': 10000,
+                'verbose': 1  # More verbose like old script
+            }
+        }
         
         # Add BC configuration
         config['bc'] = {
             'bc_loss_weight': {task: bc_loss_weight},
             'bc_update_frequency': bc_update_frequency,
+            'bc_batch_size': bc_batch_size,
             'use_bc_initialization': True,
             'bc_model_path': self.bc_model_path
         }
