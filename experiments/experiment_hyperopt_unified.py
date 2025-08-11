@@ -11,6 +11,10 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 # import tempfile  # No longer needed
 
+def is_in_docker():
+    """Check if the script is running inside a Docker container."""
+    return os.path.exists('/.dockerenv') or os.path.exists('/proc/1/cgroup') and 'docker' in open('/proc/1/cgroup').read()
+
 # Fix matplotlib warning
 os.environ['MPLCONFIGDIR'] = '/tmp/matplotlib'
 
@@ -334,32 +338,39 @@ class HyperparameterOptimizer:
                 
                 # Determine which training script to use
                 if self.algorithm == 'bc':
-                    train_script = 'train_bc.py'
+                    train_script = 'experiments/train_bc.py'
                     env_name = 'NeedleReach-v0' if self.task == 'needle_reach' else 'PegTransfer-v0'
-                    train_cmd = [
+                    base_train_cmd = [
                         'python3', train_script,
                         '--env', env_name,
                         '--output-dir', str(self.trials_dir / experiment_name)
                     ]
+                    # Wrap with Docker if running outside container
+                    train_cmd = base_train_cmd if is_in_docker() else ['docker', 'exec', 'dvrk_dev'] + base_train_cmd
                 elif self.algorithm == 'ppo':
-                    train_script = 'train_ppo.py'
+                    train_script = 'experiments/train_ppo.py'
                     env_name = 'NeedleReach-v0' if self.task == 'needle_reach' else 'PegTransfer-v0'
-                    train_cmd = [
+                    base_train_cmd = [
                         'python3', train_script,
                         '--env', env_name,
                         '--output-dir', str(self.trials_dir / experiment_name)
                     ]
+                    # Wrap with Docker if running outside container
+                    train_cmd = base_train_cmd if is_in_docker() else ['docker', 'exec', 'dvrk_dev'] + base_train_cmd
                 elif self.algorithm == 'ppo_bc' or self.algorithm == 'ppo_il':
-                    train_script = 'train_ppo+il.py'
+                    train_script = 'experiments/train_ppo+il.py'
                     env_name = 'NeedleReach-v0' if self.task == 'needle_reach' else 'PegTransfer-v0'
                     if not self.bc_model_path:
                         raise ValueError("BC model path required for PPO+IL training")
-                    train_cmd = [
+                    base_train_cmd = [
                         'python3', train_script,
                         '--env', env_name,
                         '--bc-model', str(self.bc_model_path),
+                        '--expert-data', 'experiments/data/expert_data_needle_reach.pkl' if self.task == 'needle_reach' else 'experiments/data/expert_data_peg_transfer.pkl',
                         '--output-dir', str(self.trials_dir / experiment_name)
                     ]
+                    # Wrap with Docker if running outside container
+                    train_cmd = base_train_cmd if is_in_docker() else ['docker', 'exec', 'dvrk_dev'] + base_train_cmd
                 else:
                     raise ValueError(f"Unknown algorithm: {self.algorithm}")
                 
@@ -380,7 +391,7 @@ class HyperparameterOptimizer:
                 result = subprocess.run(
                     train_cmd,
                     timeout=training_timeout,
-                    cwd=Path(__file__).parent
+                    cwd=os.getcwd()  # Use current working directory where script was invoked
                 )
                 
                 print("-" * 60)
@@ -406,32 +417,39 @@ class HyperparameterOptimizer:
                 # Determine which evaluation script to use
                 eval_output_dir = trial_dir / "evaluation"
                 if self.algorithm == 'bc':
-                    eval_script = 'evaluate_bc.py'
-                    eval_cmd = [
+                    eval_script = 'experiments/evaluate_bc.py'
+                    base_eval_cmd = [
                         'python3', eval_script,
                         '--model', str(model_path),
                         '--episodes', '50',  # Faster evaluation during optimization
                         '--no-render',
-                        '--output-dir', str(eval_output_dir)
+                        '--output-dir', str(eval_output_dir),
+                        '--action-noise-test'  # Enable robustness testing
                     ]
+                    # Wrap with Docker if running outside container
+                    eval_cmd = base_eval_cmd if is_in_docker() else ['docker', 'exec', 'dvrk_dev'] + base_eval_cmd
                 elif self.algorithm == 'ppo':
-                    eval_script = 'evaluate_ppo.py'
-                    eval_cmd = [
+                    eval_script = 'experiments/evaluate_ppo.py'
+                    base_eval_cmd = [
                         'python3', eval_script,
                         '--model', str(model_path),
                         '--episodes', '50',
                         '--no-render',
                         '--output-dir', str(eval_output_dir)
                     ]
+                    # Wrap with Docker if running outside container
+                    eval_cmd = base_eval_cmd if is_in_docker() else ['docker', 'exec', 'dvrk_dev'] + base_eval_cmd
                 elif self.algorithm == 'ppo_bc' or self.algorithm == 'ppo_il':
-                    eval_script = 'evaluate_ppo_il.py'
-                    eval_cmd = [
+                    eval_script = 'experiments/evaluate_ppo_il.py'
+                    base_eval_cmd = [
                         'python3', eval_script,
                         '--model', str(model_path),
                         '--episodes', '50',
                         '--no-render',
                         '--output-dir', str(eval_output_dir)
                     ]
+                    # Wrap with Docker if running outside container
+                    eval_cmd = base_eval_cmd if is_in_docker() else ['docker', 'exec', 'dvrk_dev'] + base_eval_cmd
                 else:
                     raise ValueError(f"Unknown algorithm: {self.algorithm}")
                 
@@ -442,7 +460,7 @@ class HyperparameterOptimizer:
                 eval_result = subprocess.run(
                     eval_cmd,
                     timeout=600,  # 10 minute timeout
-                    cwd=Path(__file__).parent
+                    cwd=os.getcwd()  # Use current working directory where script was invoked
                 )
                 
                 print("-" * 40)
@@ -467,13 +485,26 @@ class HyperparameterOptimizer:
                 with open(eval_file, 'r') as f:
                     eval_data = json.load(f)
                 
-                success_rate = eval_data['success_rate'] / 100.0  # Convert percentage to fraction
+                # Use composite score for BC (includes robustness), standard success rate for others
+                if self.algorithm == 'bc':
+                    success_rate = eval_data['composite_score'] / 100.0  # Use composite score for BC
+                else:
+                    success_rate = eval_data['success_rate'] / 100.0  # Standard for PPO/PPO+IL
                 mean_reward = eval_data['average_reward']
                 
                 print(f"Trial {trial.number} Results:")
-                print(f"  Success Rate: {success_rate:.3f}")
+                if self.algorithm == 'bc':
+                    standard_success = eval_data.get('success_rate', 0)
+                    composite_score = eval_data.get('composite_score', 0)
+                    print(f"  Standard Success Rate: {standard_success:.1f}%")
+                    print(f"  Composite Score (used): {composite_score:.1f}%")
+                    if 'action_noise_test' in eval_data and eval_data['action_noise_test']['enabled']:
+                        noise_success = eval_data['action_noise_test']['success_rate']
+                        print(f"  Action Noise Success Rate: {noise_success:.1f}%")
+                else:
+                    print(f"  Success Rate: {success_rate:.3f}")
                 print(f"  Mean Reward: {mean_reward:.2f}")
-                print(f"  📁 Trial data saved to: {exp_dir}")
+                print(f"  📁 Trial data saved to: {trial_dir}")
                 print(f"  🤖 Model saved to: {model_path}")
                 print(f"  📊 Evaluation results: {eval_file}")
                 
@@ -503,6 +534,7 @@ class HyperparameterOptimizer:
         print(f"Task: {self.task}")
         print(f"Number of trials: {self.n_trials}")
         print(f"Study name: {self.study_name}")
+        print(f"Execution mode: {'Inside Docker container' if is_in_docker() else 'Outside Docker (using docker exec)'}")
         
         # Run optimization
         self.study.optimize(self.objective, n_trials=self.n_trials)

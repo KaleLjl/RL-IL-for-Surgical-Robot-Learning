@@ -191,9 +191,9 @@ if __name__ == "__main__":
     
     # Auto-detect expert data path based on environment
     if args.env == "NeedleReach-v0":
-        expert_data_path = os.path.join("data", "expert_data_needle_reach.pkl")
+        expert_data_path = os.path.join("experiments", "data", "expert_data_needle_reach.pkl")
     elif args.env == "PegTransfer-v0":
-        expert_data_path = os.path.join("data", "expert_data_peg_transfer.pkl")
+        expert_data_path = os.path.join("experiments", "data", "expert_data_peg_transfer.pkl")
     
     # Set up output paths only if output_dir is specified
     if args.output_dir:

@@ -18,6 +18,56 @@ def flatten_obs(obs):
         obs['desired_goal']
     ])
 
+def evaluate_with_action_noise(policy, env, episodes=50, noise_std=0.1):
+    """
+    Evaluate BC policy with Gaussian noise added to actions.
+    This tests robustness to distribution shift, which predicts PPO+IL performance.
+    
+    Args:
+        policy: Trained BC policy
+        env: Environment to evaluate in
+        episodes: Number of episodes to evaluate
+        noise_std: Standard deviation of Gaussian noise to add to actions
+        
+    Returns:
+        Tuple of (success_rate, average_reward, episode_rewards)
+    """
+    successes = 0
+    total_rewards = 0
+    episode_rewards = []
+    
+    for episode in range(episodes):
+        obs, info = env.reset()
+        terminated = False
+        truncated = False
+        episode_reward = 0
+        
+        while not terminated and not truncated:
+            # Get action from policy
+            flat_obs = flatten_obs(obs)
+            action, _ = policy.predict(flat_obs, deterministic=True)
+            
+            # Add Gaussian noise to action
+            action_noise = np.random.normal(0, noise_std, action.shape)
+            noisy_action = action + action_noise
+            
+            # Clip action to valid range (assuming [-1, 1])
+            noisy_action = np.clip(noisy_action, env.action_space.low, env.action_space.high)
+            
+            obs, reward, terminated, truncated, info = env.step(noisy_action)
+            episode_reward += reward
+        
+        if info.get('is_success', False):
+            successes += 1
+        
+        total_rewards += episode_reward
+        episode_rewards.append(episode_reward)
+    
+    success_rate = (successes / episodes) * 100
+    avg_reward = total_rewards / episodes
+    
+    return success_rate, avg_reward, episode_rewards
+
 def main():
     """
     Evaluates a trained Behavioral Cloning model.
@@ -32,6 +82,10 @@ def main():
                        help="Number of episodes to evaluate")
     parser.add_argument("--no-render", action="store_true",
                        help="Disable rendering for faster evaluation")
+    parser.add_argument("--action-noise-test", action="store_true",
+                       help="Enable action noise robustness testing")
+    parser.add_argument("--noise-std", type=float, default=0.1,
+                       help="Standard deviation of action noise for robustness testing")
     
     args = parser.parse_args()
     
@@ -55,6 +109,7 @@ def main():
     # The `imitation.reconstruct_policy` has different expectations.
     policy = ActorCriticPolicy.load(args.model)
 
+    # Standard evaluation
     successes = 0
     total_rewards = 0
     episode_rewards = []
@@ -84,16 +139,41 @@ def main():
         episode_rewards.append(episode_reward)
         print(f"Episode {episode + 1}/{args.episodes} - Reward: {episode_reward:.2f} - Success: {info.get('is_success', False)}")
 
-    env.close()
-
     success_rate = (successes / args.episodes) * 100
     avg_reward = total_rewards / args.episodes
+    
+    # Action noise robustness test (if enabled)
+    action_noise_success_rate = None
+    action_noise_avg_reward = None
+    action_noise_episode_rewards = []
+    composite_score = success_rate  # Default to standard score
+    
+    if args.action_noise_test:
+        print(f"\n--- Running Action Noise Robustness Test (noise_std={args.noise_std}) ---")
+        action_noise_success_rate, action_noise_avg_reward, action_noise_episode_rewards = evaluate_with_action_noise(
+            policy, env, args.episodes, args.noise_std
+        )
+        
+        # Compute composite score: 70% standard + 30% noisy
+        composite_score = 0.7 * success_rate + 0.3 * action_noise_success_rate
+        
+        print(f"Action Noise Success Rate: {action_noise_success_rate:.2f}%")
+        print(f"Action Noise Average Reward: {action_noise_avg_reward:.2f}")
+        print(f"Composite Score: {composite_score:.2f}%")
+
+    env.close()
 
     print("\n--- Evaluation Summary ---")
     print(f"Total Episodes: {args.episodes}")
-    print(f"Successes: {successes}")
-    print(f"Success Rate: {success_rate:.2f}%")
-    print(f"Average Reward: {avg_reward:.2f}")
+    print(f"Standard Evaluation:")
+    print(f"  Successes: {successes}")
+    print(f"  Success Rate: {success_rate:.2f}%")
+    print(f"  Average Reward: {avg_reward:.2f}")
+    if args.action_noise_test:
+        print(f"Action Noise Evaluation:")
+        print(f"  Success Rate: {action_noise_success_rate:.2f}%")
+        print(f"  Average Reward: {action_noise_avg_reward:.2f}")
+        print(f"Composite Score: {composite_score:.2f}%")
     print(f"Algorithm: BC (Behavioral Cloning)")
     print(f"Environment: {env_name}")
     print("--------------------------\n")
@@ -152,6 +232,7 @@ def main():
             "success_rate": success_rate,
             "average_reward": avg_reward,
             "episode_rewards": episode_rewards,
+            "composite_score": composite_score,
             "hyperparameters": {
                 "training_hyperparams": training_hyperparams,
                 "model_info": model_info,
@@ -159,6 +240,20 @@ def main():
                 "observation_space": "flattened_dict"
             }
         }
+        
+        # Add action noise test results if performed
+        if args.action_noise_test:
+            results["action_noise_test"] = {
+                "enabled": True,
+                "noise_std": args.noise_std,
+                "success_rate": action_noise_success_rate,
+                "average_reward": action_noise_avg_reward,
+                "episode_rewards": action_noise_episode_rewards
+            }
+        else:
+            results["action_noise_test"] = {
+                "enabled": False
+            }
         
         results_file = os.path.join(args.output_dir, "evaluation_results.json")
         with open(results_file, 'w') as f:

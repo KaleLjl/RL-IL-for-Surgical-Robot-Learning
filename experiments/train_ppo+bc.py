@@ -302,7 +302,7 @@ if __name__ == "__main__":
         timesteps = 300000
         bc_weight = 0.05
     elif args.env == "PegTransfer-v0":
-        timesteps = 500000
+        timesteps = 700000
         bc_weight = 0.02  # Further reduced BC weight to reduce over-reliance on BC
     
     print(f"Training PPO+IL on {args.env} with optimized parameters:")

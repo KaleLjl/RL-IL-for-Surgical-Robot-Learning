@@ -9,7 +9,55 @@ from stable_baselines3 import PPO
 import dvrk_gym
 from dvrk_gym.utils.wrappers import FlattenDictObsWrapper
 
-def evaluate_ppo_il_agent(env_name, model_path, n_episodes, output_dir=None):
+def evaluate_with_action_noise(model, env, episodes=50, noise_std=0.1):
+    """
+    Evaluate PPO+IL policy with Gaussian noise added to actions.
+    This tests robustness to distribution shift.
+    
+    Args:
+        model: Trained PPO+IL model
+        env: Environment to evaluate in
+        episodes: Number of episodes to evaluate
+        noise_std: Standard deviation of Gaussian noise to add to actions
+        
+    Returns:
+        Tuple of (success_rate, average_reward, episode_rewards)
+    """
+    episode_rewards = []
+    episode_successes = []
+    
+    for episode in range(episodes):
+        obs, info = env.reset()
+        done = False
+        truncated = False
+        total_reward = 0
+        
+        while not done and not truncated:
+            # Get action from model
+            action, _states = model.predict(obs, deterministic=True)
+            
+            # Add Gaussian noise to action
+            action_noise = np.random.normal(0, noise_std, action.shape)
+            noisy_action = action + action_noise
+            
+            # Clip action to valid range
+            noisy_action = np.clip(noisy_action, env.action_space.low, env.action_space.high)
+            
+            obs, reward, done, truncated, info = env.step(noisy_action)
+            total_reward += reward
+        
+        episode_rewards.append(total_reward)
+        if 'is_success' in info:
+            episode_successes.append(float(info['is_success']))
+        else:
+            episode_successes.append(0.0)
+    
+    success_rate = np.mean(episode_successes) * 100
+    avg_reward = np.mean(episode_rewards)
+    
+    return success_rate, avg_reward, episode_rewards
+
+def evaluate_ppo_il_agent(env_name, model_path, n_episodes, output_dir=None, action_noise_test=False, noise_std=0.1):
     """
     Evaluates a trained PPO+IL (DAPG) agent in the specified environment.
 
@@ -81,6 +129,26 @@ def evaluate_ppo_il_agent(env_name, model_path, n_episodes, output_dir=None):
 
         episode_rewards.append(total_reward)
 
+    # Action noise robustness test (if enabled)
+    action_noise_success_rate = None
+    action_noise_avg_reward = None
+    action_noise_episode_rewards = []
+    composite_score = np.mean(episode_successes) * 100 if episode_successes else 0.0  # Default to standard score
+    
+    if action_noise_test:
+        print(f"\n--- Running Action Noise Robustness Test (noise_std={noise_std}) ---")
+        action_noise_success_rate, action_noise_avg_reward, action_noise_episode_rewards = evaluate_with_action_noise(
+            model, env, n_episodes, noise_std
+        )
+        
+        # Compute composite score: 70% standard + 30% noisy
+        standard_success_rate = np.mean(episode_successes) * 100 if episode_successes else 0.0
+        composite_score = 0.7 * standard_success_rate + 0.3 * action_noise_success_rate
+        
+        print(f"Action Noise Success Rate: {action_noise_success_rate:.2f}%")
+        print(f"Action Noise Average Reward: {action_noise_avg_reward:.2f}")
+        print(f"Composite Score: {composite_score:.2f}%")
+
     # --- 4. Print Final Statistics ---
     print("\n" + "="*50)
     print("         PPO+IL EVALUATION SUMMARY")
@@ -101,11 +169,16 @@ def evaluate_ppo_il_agent(env_name, model_path, n_episodes, output_dir=None):
     if episode_successes:
         success_rate = np.mean(episode_successes) * 100
         num_successes = int(np.sum(episode_successes))
-        print(f"Success Rate: {success_rate:.2f}% ({num_successes}/{n_episodes})")
+        print(f"Standard Success Rate: {success_rate:.2f}% ({num_successes}/{n_episodes})")
     else:
         print("Success Rate: N/A (no success info available)")
         success_rate = 0.0
         num_successes = 0
+    
+    if action_noise_test:
+        print(f"Action Noise Success Rate: {action_noise_success_rate:.2f}%")
+        print(f"Action Noise Average Reward: {action_noise_avg_reward:.2f}")
+        print(f"Composite Score: {composite_score:.2f}%")
     
     print("="*50)
     
@@ -163,6 +236,7 @@ def evaluate_ppo_il_agent(env_name, model_path, n_episodes, output_dir=None):
             "num_successes": int(num_successes) if 'num_successes' in locals() else 0,
             "episode_rewards": [float(r) for r in episode_rewards],
             "episode_successes": [float(s) for s in episode_successes],
+            "composite_score": float(composite_score),
             "hyperparameters": {
                 "training_hyperparams": training_hyperparams,
                 "model_hyperparams": model_hyperparams,
@@ -170,6 +244,20 @@ def evaluate_ppo_il_agent(env_name, model_path, n_episodes, output_dir=None):
                 "observation_space": "flattened_dict"
             }
         }
+        
+        # Add action noise test results if performed
+        if action_noise_test:
+            results["action_noise_test"] = {
+                "enabled": True,
+                "noise_std": noise_std,
+                "success_rate": action_noise_success_rate,
+                "average_reward": action_noise_avg_reward,
+                "episode_rewards": action_noise_episode_rewards
+            }
+        else:
+            results["action_noise_test"] = {
+                "enabled": False
+            }
         
         results_file = os.path.join(output_dir, "ppo_il_evaluation_results.json")
         with open(results_file, 'w') as f:
@@ -208,6 +296,17 @@ if __name__ == "__main__":
         action="store_true",
         help="Disable rendering for faster evaluation."
     )
+    parser.add_argument(
+        "--action-noise-test",
+        action="store_true",
+        help="Enable action noise robustness testing."
+    )
+    parser.add_argument(
+        "--noise-std",
+        type=float,
+        default=0.1,
+        help="Standard deviation of action noise for robustness testing (default: 0.1)."
+    )
 
     args = parser.parse_args()
     
@@ -228,5 +327,7 @@ if __name__ == "__main__":
         env_name=env_name,
         model_path=args.model,
         n_episodes=args.episodes,
-        output_dir=args.output_dir
+        output_dir=args.output_dir,
+        action_noise_test=args.action_noise_test,
+        noise_std=args.noise_std
     )
