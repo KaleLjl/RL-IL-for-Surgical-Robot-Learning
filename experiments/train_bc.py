@@ -15,7 +15,7 @@ import time
 import dvrk_gym  # Import to register the environment
 
 
-def train_bc_agent(env_name, expert_data_path, model_save_path, log_dir):
+def train_bc_agent(env_name, expert_data_path, model_save_path=None, log_dir=None):
     """
     Trains a Behavioral Cloning (BC) agent.
 
@@ -89,12 +89,15 @@ def train_bc_agent(env_name, expert_data_path, model_save_path, log_dir):
     venv = DummyVecEnv([lambda: gym.make(env_name)])
 
     # --- 3. Configure Logging ---
-    os.makedirs(log_dir, exist_ok=True)
-    # The imitation logger API seems to have changed and is simpler now.
-    imitation_logger.configure(folder=log_dir)
-    # The SB3 logger still accepts format_strings.
-    sb3_logger.configure(folder=log_dir, format_strings=["stdout", "tensorboard"])
-    print(f"Logging configured at: {log_dir}")
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+        # The imitation logger API seems to have changed and is simpler now.
+        imitation_logger.configure(folder=log_dir)
+        # The SB3 logger still accepts format_strings.
+        sb3_logger.configure(folder=log_dir, format_strings=["stdout", "tensorboard"])
+        print(f"Logging configured at: {log_dir}")
+    else:
+        print("Logging disabled - no output directory specified")
 
     # --- 4. Setup BC Trainer ---
     # Since we flattened the observations, we must manually create a Box observation
@@ -166,44 +169,50 @@ def train_bc_agent(env_name, expert_data_path, model_save_path, log_dir):
         # Continue to save the model even if training had issues
 
     # --- 6. Save the Policy ---
-    os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
-    bc_trainer.policy.save(model_save_path)
-    print(f"Trained policy saved to: {model_save_path}")
+    if model_save_path:
+        os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
+        bc_trainer.policy.save(model_save_path)
+        print(f"Trained policy saved to: {model_save_path}")
+    else:
+        print("Model not saved - no output directory specified")
 
     venv.close()
 
 if __name__ == "__main__":
     # --- Command Line Arguments ---
     parser = argparse.ArgumentParser(description="Train BC agent on dVRK environments")
-    parser.add_argument("--env", default="NeedleReach-v0",
+    parser.add_argument("--env", required=True,
                        choices=["NeedleReach-v0", "PegTransfer-v0"],
                        help="Environment name to train on")
-    parser.add_argument("--expert-data", 
-                       help="Path to expert data file (auto-detected if not provided)")
+    parser.add_argument("--output-dir", default=None,
+                       help="Output directory for logs and model (if not specified, no files are saved)")
     
     args = parser.parse_args()
     
-    # Auto-detect expert data path if not provided
-    if args.expert_data is None:
-        if args.env == "NeedleReach-v0":
-            args.expert_data = os.path.join("data", "expert_data_needle_reach.pkl")
-        elif args.env == "PegTransfer-v0":
-            args.expert_data = os.path.join("data", "expert_data_peg_transfer.pkl")
+    # Auto-detect expert data path based on environment
+    if args.env == "NeedleReach-v0":
+        expert_data_path = os.path.join("data", "expert_data_needle_reach.pkl")
+    elif args.env == "PegTransfer-v0":
+        expert_data_path = os.path.join("data", "expert_data_peg_transfer.pkl")
     
-    # Create a unique directory for this experiment
-    env_suffix = args.env.lower().replace("-v0", "").replace("reach", "_reach").replace("transfer", "_transfer")
-    experiment_name = f"bc_{env_suffix}_{int(time.time())}"
-    log_dir = os.path.join("logs", experiment_name)
-    model_dir = "models"
-    # Save model in the models/ dir
-    model_save_path = os.path.join(model_dir, f"{experiment_name}.zip")
+    # Set up output paths only if output_dir is specified
+    if args.output_dir:
+        env_suffix = args.env.lower().replace("-v0", "").replace("reach", "_reach").replace("transfer", "_transfer")
+        experiment_name = f"bc_{env_suffix}_{int(time.time())}"
+        log_dir = os.path.join(args.output_dir, "logs")
+        model_save_path = os.path.join(args.output_dir, f"{experiment_name}.zip")
+        print(f"Output directory: {args.output_dir}")
+    else:
+        log_dir = None
+        model_save_path = None
+        print("No output directory specified - running without saving files")
     
     print(f"Training BC on {args.env}")
-    print(f"Expert data: {args.expert_data}")
+    print(f"Expert data: {expert_data_path}")
 
     train_bc_agent(
         env_name=args.env,
-        expert_data_path=args.expert_data,
+        expert_data_path=expert_data_path,
         model_save_path=model_save_path,
         log_dir=log_dir,
     )

@@ -9,7 +9,7 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
-import tempfile
+# import tempfile  # No longer needed
 
 # Fix matplotlib warning
 os.environ['MPLCONFIGDIR'] = '/tmp/matplotlib'
@@ -19,12 +19,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from optuna.visualization import plot_optimization_history, plot_param_importances, plot_parallel_coordinate
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / 'src'))
-
-from utils.config_parser import ConfigParser
+# No longer need config parser since we use simplified training scripts
 
 
 class HyperparameterOptimizer:
@@ -33,43 +28,40 @@ class HyperparameterOptimizer:
     def __init__(self, 
                  algorithm: str,
                  task: str,
-                 stage: str = "bc",
+                 # stage parameter removed - now just algorithm-specific
                  n_trials: int = 50,
-                 study_name: Optional[str] = None,
+                 # study_name removed - results go directly to results_dir
                  bc_model_path: Optional[str] = None,
-                 experiments_dir: str = "/app/experiments/results/experiments",
-                 analysis_dir: str = "/app/experiments/results/hyperopt_phase3"):
+                 trials_dir: str = "hyperopt_trials",
+                 results_dir: str = "hyperopt_results"):
         """Initialize hyperparameter optimizer.
         
         Args:
             algorithm: Algorithm to optimize ('bc', 'ppo', 'ppo_bc')
             task: Task name ('needle_reach', 'peg_transfer')
-            stage: Optimization stage ('bc', 'ppo_bc', 'sequential')
+            # stage parameter removed - optimization is algorithm-specific
             n_trials: Number of optimization trials
-            study_name: Custom study name
+            # study_name removed
             bc_model_path: Path to BC model for ppo_bc stage
-            experiments_dir: Directory for individual trial experiments
-            analysis_dir: Directory for final analysis files
+            trials_dir: Directory for individual trial experiments
+            results_dir: Directory for final analysis files
         """
         self.algorithm = algorithm
         self.task = task
-        self.stage = stage
+        # self.stage = stage  # No longer needed
         self.n_trials = n_trials
         self.bc_model_path = bc_model_path
-        self.experiments_dir = Path(experiments_dir)  # For individual trial results
-        self.analysis_dir = Path(analysis_dir)        # For final analysis files
+        self.trials_dir = Path(trials_dir)  # For individual trial results
+        self.results_dir = Path(results_dir)        # For final analysis files
         
-        # Create study name
-        if study_name:
-            self.study_name = study_name
-        else:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            self.study_name = f"{algorithm}_{task}_{stage}_{timestamp}"
+        # Create study name for Optuna (internal use only)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.study_name = f"{algorithm}_{task}_{timestamp}"
         
         # Create both directories
-        self.study_dir = self.analysis_dir / self.study_name  # Analysis files go here
+        self.study_dir = self.results_dir  # Results go directly into results_dir
         self.study_dir.mkdir(parents=True, exist_ok=True)
-        self.experiments_dir.mkdir(parents=True, exist_ok=True)  # Ensure experiments dir exists
+        self.trials_dir.mkdir(parents=True, exist_ok=True)  # Ensure trials dir exists
         
         # Initialize study
         self.study = optuna.create_study(
@@ -80,7 +72,8 @@ class HyperparameterOptimizer:
         )
         
         print(f"Initialized Optuna study: {self.study_name}")
-        print(f"Output directory: {self.study_dir}")
+        print(f"Results directory: {self.study_dir}")
+        print(f"Trials directory: {self.trials_dir}")
     
     def get_search_space(self, trial: optuna.trial.Trial, algorithm: str, task: str) -> Dict[str, Any]:
         """Define search space for hyperparameters.
@@ -335,24 +328,40 @@ class HyperparameterOptimizer:
             config['seed'] = trial.suggest_int('seed', 1, 1000)
             
             # Create temporary config file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-                json.dump(config, f, indent=2)
-                temp_config_path = f.name
-            
             try:
                 # Create experiment name for this trial
                 experiment_name = f"{self.study_name}_trial_{trial.number:03d}"
                 
-                # Run training
-                train_cmd = [
-                    'python3', 'train_unified.py',
-                    '--config', temp_config_path,
-                    '--task', self.task,
-                    '--algorithm', self.algorithm,
-                    '--experiment-name', experiment_name,
-                    '--output-dir', str(self.experiments_dir),
-                    '--no-tensorboard'
-                ]
+                # Determine which training script to use
+                if self.algorithm == 'bc':
+                    train_script = 'train_bc.py'
+                    env_name = 'NeedleReach-v0' if self.task == 'needle_reach' else 'PegTransfer-v0'
+                    train_cmd = [
+                        'python3', train_script,
+                        '--env', env_name,
+                        '--output-dir', str(self.trials_dir / experiment_name)
+                    ]
+                elif self.algorithm == 'ppo':
+                    train_script = 'train_ppo.py'
+                    env_name = 'NeedleReach-v0' if self.task == 'needle_reach' else 'PegTransfer-v0'
+                    train_cmd = [
+                        'python3', train_script,
+                        '--env', env_name,
+                        '--output-dir', str(self.trials_dir / experiment_name)
+                    ]
+                elif self.algorithm == 'ppo_bc' or self.algorithm == 'ppo_il':
+                    train_script = 'train_ppo+il.py'
+                    env_name = 'NeedleReach-v0' if self.task == 'needle_reach' else 'PegTransfer-v0'
+                    if not self.bc_model_path:
+                        raise ValueError("BC model path required for PPO+IL training")
+                    train_cmd = [
+                        'python3', train_script,
+                        '--env', env_name,
+                        '--bc-model', str(self.bc_model_path),
+                        '--output-dir', str(self.trials_dir / experiment_name)
+                    ]
+                else:
+                    raise ValueError(f"Unknown algorithm: {self.algorithm}")
                 
                 print(f"\n{'='*50}")
                 print(f"TRIAL {trial.number}: {self.algorithm.upper()} on {self.task}")
@@ -362,59 +371,95 @@ class HyperparameterOptimizer:
                     print(f"  {key}: {value}")
                 print(f"{'='*50}")
                 
-                # Run training with timeout (increased for PPO)
+                # Run training with timeout (increased for PPO) and show output
                 training_timeout = 14400 if self.algorithm == 'ppo' else 7200  # 4 hours for PPO, 2 hours for BC
+                print(f"\nRunning training command: {' '.join(train_cmd)}")
+                print(f"Training logs will be shown below:")
+                print("-" * 60)
+                
                 result = subprocess.run(
                     train_cmd,
-                    capture_output=True,
-                    text=True,
                     timeout=training_timeout,
                     cwd=Path(__file__).parent
                 )
                 
+                print("-" * 60)
                 if result.returncode != 0:
-                    print(f"Training failed for trial {trial.number}")
-                    print(f"Error: {result.stderr}")
+                    print(f"Training failed for trial {trial.number} with return code {result.returncode}")
                     return 0.0
                 
-                # Find the experiment directory (relative to experiments/ where subprocesses run)
-                exp_dir = Path(__file__).parent / f"results/experiments/{experiment_name}"
-                if not exp_dir.exists():
-                    print(f"Experiment directory not found: {exp_dir}")
+                print(f"Training completed successfully for trial {trial.number}")
+                
+                # Find the trained model
+                trial_dir = self.trials_dir / experiment_name
+                if not trial_dir.exists():
+                    print(f"Trial directory not found: {trial_dir}")
                     return 0.0
                 
-                # Run evaluation
-                model_path = exp_dir / 'models' / f'{self.algorithm}_final.zip'
-                if not model_path.exists():
-                    print(f"Model not found: {model_path}")
+                # Find the model file (should be the .zip file in the trial directory)
+                model_files = list(trial_dir.glob('*.zip'))
+                if not model_files:
+                    print(f"No model file found in {trial_dir}")
                     return 0.0
+                model_path = model_files[0]  # Take the first .zip file
                 
-                # Evaluation runs from experiments/ directory, so use relative paths
-                relative_exp_dir = f"results/experiments/{experiment_name}"
-                eval_cmd = [
-                    'python3', 'evaluate_unified.py',
-                    '--model', f"{relative_exp_dir}/models/{self.algorithm}_final.zip",
-                    '--task', self.task,
-                    '--algorithm', self.algorithm,
-                    '--n-episodes', '50',  # Faster evaluation during optimization
-                    '--output-dir', f"{relative_exp_dir}/evaluations"
-                ]
+                # Determine which evaluation script to use
+                eval_output_dir = trial_dir / "evaluation"
+                if self.algorithm == 'bc':
+                    eval_script = 'evaluate_bc.py'
+                    eval_cmd = [
+                        'python3', eval_script,
+                        '--model', str(model_path),
+                        '--episodes', '50',  # Faster evaluation during optimization
+                        '--no-render',
+                        '--output-dir', str(eval_output_dir)
+                    ]
+                elif self.algorithm == 'ppo':
+                    eval_script = 'evaluate_ppo.py'
+                    eval_cmd = [
+                        'python3', eval_script,
+                        '--model', str(model_path),
+                        '--episodes', '50',
+                        '--no-render',
+                        '--output-dir', str(eval_output_dir)
+                    ]
+                elif self.algorithm == 'ppo_bc' or self.algorithm == 'ppo_il':
+                    eval_script = 'evaluate_ppo_il.py'
+                    eval_cmd = [
+                        'python3', eval_script,
+                        '--model', str(model_path),
+                        '--episodes', '50',
+                        '--no-render',
+                        '--output-dir', str(eval_output_dir)
+                    ]
+                else:
+                    raise ValueError(f"Unknown algorithm: {self.algorithm}")
+                
+                print(f"\nRunning evaluation command: {' '.join(eval_cmd)}")
+                print(f"Evaluation logs:")
+                print("-" * 40)
                 
                 eval_result = subprocess.run(
                     eval_cmd,
-                    capture_output=True,
-                    text=True,
                     timeout=600,  # 10 minute timeout
                     cwd=Path(__file__).parent
                 )
                 
+                print("-" * 40)
                 if eval_result.returncode != 0:
-                    print(f"Evaluation failed for trial {trial.number}")
-                    print(f"Error: {eval_result.stderr}")
+                    print(f"Evaluation failed for trial {trial.number} with return code {eval_result.returncode}")
                     return 0.0
                 
+                print(f"Evaluation completed successfully for trial {trial.number}")
+                
                 # Load evaluation results
-                eval_file = exp_dir / 'evaluations' / f'evaluation_{self.algorithm}_{self.task}.json'
+                if self.algorithm == 'bc':
+                    eval_file = eval_output_dir / 'evaluation_results.json'
+                elif self.algorithm == 'ppo':
+                    eval_file = eval_output_dir / 'ppo_evaluation_results.json'
+                elif self.algorithm == 'ppo_bc' or self.algorithm == 'ppo_il':
+                    eval_file = eval_output_dir / 'ppo_il_evaluation_results.json'
+                
                 if not eval_file.exists():
                     print(f"Evaluation file not found: {eval_file}")
                     return 0.0
@@ -422,8 +467,8 @@ class HyperparameterOptimizer:
                 with open(eval_file, 'r') as f:
                     eval_data = json.load(f)
                 
-                success_rate = eval_data['metrics']['success_rate']
-                mean_reward = eval_data['metrics']['mean_reward']
+                success_rate = eval_data['success_rate'] / 100.0  # Convert percentage to fraction
+                mean_reward = eval_data['average_reward']
                 
                 print(f"Trial {trial.number} Results:")
                 print(f"  Success Rate: {success_rate:.3f}")
@@ -440,9 +485,8 @@ class HyperparameterOptimizer:
                 return success_rate
                 
             finally:
-                # Clean up temporary config file
-                if os.path.exists(temp_config_path):
-                    os.unlink(temp_config_path)
+                # Clean up no longer needed with simplified training scripts
+                pass
                 
         except Exception as e:
             print(f"Error in trial {trial.number}: {str(e)}")
@@ -457,7 +501,6 @@ class HyperparameterOptimizer:
         print(f"\nStarting hyperparameter optimization:")
         print(f"Algorithm: {self.algorithm}")
         print(f"Task: {self.task}")
-        print(f"Stage: {self.stage}")
         print(f"Number of trials: {self.n_trials}")
         print(f"Study name: {self.study_name}")
         
@@ -496,7 +539,6 @@ class HyperparameterOptimizer:
             'study_name': self.study_name,
             'algorithm': self.algorithm,
             'task': self.task,
-            'stage': self.stage,
             'n_trials': self.n_trials,
             'best_trial': {
                 'number': best_trial.number,
@@ -523,8 +565,9 @@ class HyperparameterOptimizer:
         optimal_config = self.get_search_space(best_trial, self.algorithm, self.task)
         optimal_config['seed'] = best_trial.params['seed']
         
-        config_file = self.study_dir / f'optimal_config_{self.algorithm}_{self.task}.yaml'
-        ConfigParser.save_config(optimal_config, config_file)
+        config_file = self.study_dir / f'optimal_config_{self.algorithm}_{self.task}.json'
+        with open(config_file, 'w') as f:
+            json.dump(optimal_config, f, indent=2)
         
         # Save trials DataFrame
         df = self.study.trials_dataframe()
@@ -561,95 +604,7 @@ class HyperparameterOptimizer:
             print(f"Warning: Could not generate visualizations: {e}")
 
 
-def sequential_optimization(task: str, bc_trials: int = 50, ppo_bc_trials: int = 30, output_dir: str = "experiments/results/hyperopt_phase3"):
-    """Run sequential optimization: BC first, then PPO+BC.
-    
-    Args:
-        task: Task name ('needle_reach', 'peg_transfer')
-        bc_trials: Number of trials for BC optimization
-        ppo_bc_trials: Number of trials for PPO+BC optimization
-        output_dir: Output directory
-    """
-    print(f"\n{'='*60}")
-    print("SEQUENTIAL HYPERPARAMETER OPTIMIZATION")
-    print(f"Task: {task}")
-    print(f"BC Trials: {bc_trials}")
-    print(f"PPO+BC Trials: {ppo_bc_trials}")
-    print(f"{'='*60}")
-    
-    # Stage 1: Optimize BC
-    print(f"\n{'='*30}")
-    print("STAGE 1: BC OPTIMIZATION")
-    print(f"{'='*30}")
-    
-    bc_optimizer = HyperparameterOptimizer(
-        algorithm='bc',
-        task=task,
-        stage='bc',
-        n_trials=bc_trials,
-        output_dir=output_dir
-    )
-    
-    bc_params, bc_score = bc_optimizer.optimize()
-    
-    # Get best BC model path
-    best_bc_trial = bc_optimizer.study.best_trial
-    bc_model_path = best_bc_trial.user_attrs.get('model_path')
-    
-    if not bc_model_path or not Path(bc_model_path).exists():
-        print("ERROR: Best BC model not found. Cannot proceed to PPO+BC optimization.")
-        return
-    
-    print(f"\nBC optimization completed. Best model: {bc_model_path}")
-    
-    # Stage 2: Optimize PPO+BC using best BC model
-    print(f"\n{'='*30}")
-    print("STAGE 2: PPO+BC OPTIMIZATION")
-    print(f"{'='*30}")
-    
-    ppo_bc_optimizer = HyperparameterOptimizer(
-        algorithm='ppo_bc',
-        task=task,
-        stage='ppo_bc',
-        n_trials=ppo_bc_trials,
-        bc_model_path=bc_model_path,
-        output_dir=output_dir
-    )
-    
-    ppo_bc_params, ppo_bc_score = ppo_bc_optimizer.optimize()
-    
-    # Generate summary
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    summary_file = Path(output_dir) / f"sequential_summary_{task}_{timestamp}.json"
-    
-    summary = {
-        'task': task,
-        'timestamp': timestamp,
-        'bc_optimization': {
-            'trials': bc_trials,
-            'best_score': bc_score,
-            'best_params': bc_params,
-            'study_name': bc_optimizer.study_name
-        },
-        'ppo_bc_optimization': {
-            'trials': ppo_bc_trials,
-            'best_score': ppo_bc_score,
-            'best_params': ppo_bc_params,
-            'study_name': ppo_bc_optimizer.study_name,
-            'bc_model_path': bc_model_path
-        }
-    }
-    
-    with open(summary_file, 'w') as f:
-        json.dump(summary, f, indent=2)
-    
-    print(f"\n{'='*60}")
-    print("SEQUENTIAL OPTIMIZATION COMPLETED")
-    print(f"{'='*60}")
-    print(f"BC Best Score: {bc_score:.3f}")
-    print(f"PPO+BC Best Score: {ppo_bc_score:.3f}")
-    print(f"Improvement: {ppo_bc_score - bc_score:.3f}")
-    print(f"Summary saved to: {summary_file}")
+# Sequential optimization removed - users will manually select best BC model for PPO+IL optimization
 
 
 def main():
@@ -658,50 +613,39 @@ def main():
     
     parser.add_argument('--algorithm', type=str, choices=['bc', 'ppo', 'ppo_bc'], required=True,
                         help='Algorithm to optimize')
-    parser.add_argument('--task', type=str, choices=['needle_reach', 'peg_transfer'], required=True,
-                        help='Task to optimize for')
-    parser.add_argument('--stage', type=str, choices=['bc', 'ppo_bc', 'sequential'], default='bc',
-                        help='Optimization stage')
+    parser.add_argument('--env', type=str, choices=['NeedleReach-v0', 'PegTransfer-v0'], required=True,
+                        help='Environment to optimize for')
+    # --stage removed - algorithm determines optimization type
     parser.add_argument('--n-trials', type=int, default=50,
                         help='Number of optimization trials')
-    parser.add_argument('--study-name', type=str, default=None,
-                        help='Custom study name')
+    # --study-name removed - results go directly to --results-dir
     parser.add_argument('--bc-model-path', type=str, default=None,
                         help='Path to BC model for ppo_bc stage')
-    parser.add_argument('--experiments-dir', type=str, default='/app/experiments/results/experiments',
+    parser.add_argument('--trials-dir', type=str, default='hyperopt_trials',
                         help='Directory for individual trial experiments')
-    parser.add_argument('--analysis-dir', type=str, default='/app/experiments/results/hyperopt_phase3',
+    parser.add_argument('--results-dir', type=str, default='hyperopt_results',
                         help='Directory for final analysis files')
-    parser.add_argument('--bc-trials', type=int, default=50,
-                        help='Number of BC trials for sequential optimization')
-    parser.add_argument('--ppo-bc-trials', type=int, default=30,
-                        help='Number of PPO+BC trials for sequential optimization')
+    # Sequential parameters removed - no longer needed
     
     args = parser.parse_args()
     
-    if args.stage == 'sequential':
-        sequential_optimization(
-            task=args.task,
-            bc_trials=args.bc_trials,
-            ppo_bc_trials=args.ppo_bc_trials,
-            output_dir=args.output_dir
-        )
-    else:
-        if args.algorithm == 'ppo_bc' and not args.bc_model_path:
-            parser.error('--bc-model-path is required for ppo_bc algorithm')
-        
-        optimizer = HyperparameterOptimizer(
-            algorithm=args.algorithm,
-            task=args.task,
-            stage=args.stage,
-            n_trials=args.n_trials,
-            study_name=args.study_name,
-            bc_model_path=args.bc_model_path,
-            experiments_dir=args.experiments_dir,
-            analysis_dir=args.analysis_dir
-        )
-        
-        optimizer.optimize()
+    if args.algorithm == 'ppo_bc' and not args.bc_model_path:
+        parser.error('--bc-model-path is required for ppo_bc algorithm')
+    
+    # Convert env name to task name for internal use
+    task = 'needle_reach' if args.env == 'NeedleReach-v0' else 'peg_transfer'
+    
+    optimizer = HyperparameterOptimizer(
+        algorithm=args.algorithm,
+        task=task,
+        n_trials=args.n_trials,
+        # study_name parameter removed
+        bc_model_path=args.bc_model_path,
+        trials_dir=args.trials_dir,
+        results_dir=args.results_dir
+    )
+    
+    optimizer.optimize()
 
 
 if __name__ == '__main__':

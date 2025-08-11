@@ -18,7 +18,7 @@ from dvrk_gym.utils.wrappers import FlattenDictObsWrapper
 from dvrk_gym.utils.callbacks import TrainingAnalysisCallback
 import dvrk_gym  # Import to register the environment
 
-def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir, timesteps=300000, bc_weight=0.05, log_interval=1000, bc_model_path=None):
+def train_dapg_agent(env_name, expert_data_path, model_save_path=None, log_dir=None, timesteps=300000, bc_weight=0.05, log_interval=1000, bc_model_path=None, render=False):
     """
     Trains an agent using our custom PPOWithBCLoss algorithm, which
     forms the basis of our DAPG implementation.
@@ -82,20 +82,28 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir, times
     print(f"Initializing environment: {env_name}")
     # Per reward-system-guidelines.md, DAPG should use a sparse reward.
     # The default is sparse, so we don't need to set any env_kwargs.
-    # Enable GUI rendering for debugging.
+    # Setup environment with optional rendering
+    render_mode = 'human' if render else None
     venv = make_vec_env(
         env_name,
         n_envs=1,
         wrapper_class=FlattenDictObsWrapper,
-        env_kwargs={'render_mode': 'human'}
+        env_kwargs={'render_mode': render_mode}
     )
     print("Environment created and wrapped with FlattenDictObsWrapper.")
+    if render:
+        print("Rendering enabled - training will be visualized")
+    else:
+        print("Rendering disabled - training will run faster")
 
     # --- 3. Configure Logging ---
-    os.makedirs(log_dir, exist_ok=True)
-    imitation_logger.configure(folder=log_dir, format_strs=["stdout", "tensorboard"])
-    sb3_logger.configure(folder=log_dir, format_strings=["stdout", "tensorboard"])
-    print(f"Logging configured at: {log_dir}")
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+        imitation_logger.configure(folder=log_dir, format_strs=["stdout", "tensorboard"])
+        sb3_logger.configure(folder=log_dir, format_strings=["stdout", "tensorboard"])
+        print(f"Logging configured at: {log_dir}")
+    else:
+        print("Logging disabled - no output directory specified")
 
     # --- 4. Setup Custom DAPG (PPOWithBCLoss) Trainer ---
     print("Initializing custom PPOWithBCLoss agent...")
@@ -176,90 +184,69 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path, log_dir, times
     print("Training complete.")
 
     # --- 6. Save the Model ---
-    os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
-    model.save(model_save_path)
-    print(f"Trained model saved to: {model_save_path}")
+    if model_save_path:
+        os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
+        model.save(model_save_path)
+        print(f"Trained model saved to: {model_save_path}")
+    else:
+        print("Model not saved - no output directory specified")
 
     venv.close()
 
 if __name__ == "__main__":
     # --- Command Line Arguments ---
-    parser = argparse.ArgumentParser(description="Train DAPG agent on dVRK environments")
-    parser.add_argument("--env", default="NeedleReach-v0",
+    parser = argparse.ArgumentParser(description="Train PPO+IL (DAPG) agent on dVRK environments")
+    parser.add_argument("--env", required=True,
                        choices=["NeedleReach-v0", "PegTransfer-v0"],
                        help="Environment name to train on")
-    parser.add_argument("--expert-data", 
-                       help="Path to expert data file (auto-detected if not provided)")
-    parser.add_argument("--bc-model", 
-                       help="Path to BC model for initialization (auto-detected if not provided)")
-    parser.add_argument("--timesteps", type=int,
-                       help="Total training timesteps (auto-selected if not provided)")
-    parser.add_argument("--bc-weight", type=float,
-                       help="BC loss weight (auto-selected if not provided)")
-    parser.add_argument("--log-interval", type=int, default=1000,
-                       help="Steps between analysis logging (default: 1000)")
+    parser.add_argument("--bc-model", required=True,
+                       help="Path to BC model for initialization")
+    parser.add_argument("--output-dir", default=None,
+                       help="Output directory for logs and model (if not specified, no files are saved)")
+    parser.add_argument("--render", action="store_true",
+                       help="Enable rendering during training (default: disabled)")
     
     args = parser.parse_args()
     
-    # Environment-specific optimal parameters for DAPG
+    # Environment-specific optimal parameters for PPO+IL
     if args.env == "NeedleReach-v0":
-        defaults = {
-            "timesteps": 300000,
-            "bc_weight": 0.05,
-        }
+        timesteps = 300000
+        bc_weight = 0.05
     elif args.env == "PegTransfer-v0":
-        defaults = {
-            "timesteps": 500000,
-            "bc_weight": 0.02,  # Further reduced BC weight to reduce over-reliance on BC
-        }
+        timesteps = 500000
+        bc_weight = 0.02  # Further reduced BC weight to reduce over-reliance on BC
     
-    # Use provided arguments or fall back to environment defaults
-    timesteps = args.timesteps or defaults["timesteps"]
-    bc_weight = args.bc_weight or defaults["bc_weight"]
-    
-    print(f"Training DAPG on {args.env} with optimized parameters:")
+    print(f"Training PPO+IL on {args.env} with optimized parameters:")
     print(f"  Timesteps: {timesteps}")
     print(f"  BC weight: {bc_weight}")
+    print(f"  BC model: {args.bc_model}")
     
-    # Auto-detect expert data path if not provided
-    if args.expert_data is None:
-        if args.env == "NeedleReach-v0":
-            args.expert_data = os.path.join("data", "expert_data_needle_reach.pkl")
-        elif args.env == "PegTransfer-v0":
-            args.expert_data = os.path.join("data", "expert_data_peg_transfer.pkl")
+    # Auto-detect expert data path based on environment
+    if args.env == "NeedleReach-v0":
+        expert_data_path = os.path.join("data", "expert_data_needle_reach.pkl")
+    elif args.env == "PegTransfer-v0":
+        expert_data_path = os.path.join("data", "expert_data_peg_transfer.pkl")
     
-    # Auto-detect BC model path if not provided
-    if args.bc_model is None:
-        import glob
-        if args.env == "NeedleReach-v0":
-            pattern = os.path.join("models", "bc_needle_reach_*.zip")
-        elif args.env == "PegTransfer-v0":
-            pattern = os.path.join("models", "bc_peg_transfer_*.zip")
-        
-        bc_models = glob.glob(pattern)
-        if bc_models:
-            args.bc_model = sorted(bc_models)[-1]  # Get the latest model
-            print(f"Auto-detected BC model: {args.bc_model}")
-        else:
-            print(f"No BC model found for {args.env} - will start from random initialization")
-            args.bc_model = None
-    
-    # Create a unique directory for this experiment
-    env_suffix = args.env.lower().replace("-v0", "").replace("reach", "_reach").replace("transfer", "_transfer")
-    experiment_name = f"dapg_{env_suffix}_{int(time.time())}"
-    log_dir = os.path.join("logs", experiment_name)
-    model_dir = "models"
-    
-    # Save model in the models/ dir
-    model_save_path = os.path.join(model_dir, f"{experiment_name}.zip")
+    # Set up output paths only if output_dir is specified
+    if args.output_dir:
+        env_suffix = args.env.lower().replace("-v0", "").replace("reach", "_reach").replace("transfer", "_transfer")
+        experiment_name = f"ppo_il_{env_suffix}_{int(time.time())}"
+        log_dir = os.path.join(args.output_dir, "logs")
+        model_save_path = os.path.join(args.output_dir, f"{experiment_name}.zip")
+        print(f"Output directory: {args.output_dir}")
+    else:
+        log_dir = None
+        model_save_path = None
+        print("No output directory specified - running without saving files")
 
     train_dapg_agent(
         env_name=args.env,
-        expert_data_path=args.expert_data,
+        expert_data_path=expert_data_path,
         model_save_path=model_save_path,
         log_dir=log_dir,
         timesteps=timesteps,
         bc_weight=bc_weight,
-        log_interval=args.log_interval,
+        log_interval=1000,
         bc_model_path=args.bc_model,
+        render=args.render,
     )
