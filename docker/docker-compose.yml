@@ -18,6 +18,8 @@ services:
       # NVIDIA Container Runtime
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
+      # Set matplotlib cache directory to avoid warnings
+      - MPLCONFIGDIR=/tmp/matplotlib
     # Use the host's network stack for seamless X11 forwarding
     network_mode: "host"
     # Keep the container running

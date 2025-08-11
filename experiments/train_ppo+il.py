@@ -18,6 +18,63 @@ from dvrk_gym.utils.wrappers import FlattenDictObsWrapper
 from dvrk_gym.utils.callbacks import TrainingAnalysisCallback
 import dvrk_gym  # Import to register the environment
 
+def extract_network_architecture(bc_model_path):
+    """
+    Extract network architecture from a trained BC model.
+    
+    Args:
+        bc_model_path (str): Path to the BC model file
+        
+    Returns:
+        list: Network architecture as a list of hidden layer sizes
+    """
+    try:
+        import torch
+        
+        # Load the BC policy directly from the zip file
+        bc_policy = MlpPolicy.load(bc_model_path)
+        
+        # Try different ways to extract architecture
+        net_arch = []
+        
+        # Method 1: Check mlp_extractor.shared_net
+        if hasattr(bc_policy, 'mlp_extractor') and hasattr(bc_policy.mlp_extractor, 'shared_net'):
+            for layer in bc_policy.mlp_extractor.shared_net:
+                if isinstance(layer, torch.nn.Linear):
+                    net_arch.append(layer.out_features)
+            
+        # Method 2: Check policy_net if shared_net doesn't exist
+        elif hasattr(bc_policy, 'mlp_extractor') and hasattr(bc_policy.mlp_extractor, 'policy_net'):
+            for layer in bc_policy.mlp_extractor.policy_net:
+                if isinstance(layer, torch.nn.Linear):
+                    net_arch.append(layer.out_features)
+        
+        # Method 3: Check action_net directly
+        elif hasattr(bc_policy, 'action_net'):
+            for layer in bc_policy.action_net:
+                if isinstance(layer, torch.nn.Linear):
+                    net_arch.append(layer.out_features)
+        
+        # Method 4: Inspect all modules recursively
+        else:
+            for name, module in bc_policy.named_modules():
+                if isinstance(module, torch.nn.Linear):
+                    if 'shared' in name or 'policy' in name or 'mlp' in name:
+                        net_arch.append(module.out_features)
+        
+        # Return detected architecture
+        if net_arch:
+            print(f"Detected BC model architecture: {net_arch}")
+            return net_arch
+        else:
+            print("Could not detect network architecture from BC model, using default [256, 256]")
+            return [256, 256]
+            
+    except Exception as e:
+        print(f"Failed to extract architecture from BC model: {e}")
+        print("Using default architecture [256, 256]")
+        return [256, 256]
+
 def train_dapg_agent(env_name, expert_data_path, model_save_path=None, log_dir=None, timesteps=300000, bc_weight=0.05, log_interval=1000, bc_model_path=None, render=False):
     """
     Trains an agent using our custom PPOWithBCLoss algorithm, which
@@ -108,16 +165,16 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path=None, log_dir=N
     # --- 4. Setup Custom DAPG (PPOWithBCLoss) Trainer ---
     print("Initializing custom PPOWithBCLoss agent...")
     
-    # Environment-specific network architecture to match BC model
-    if env_name == "PegTransfer-v0":
-        net_arch = [128, 128]  # Match BC model for PegTransfer
-    elif env_name == "NeedleReach-v0":
-        net_arch = [256, 256]  # Keep original for NeedleReach
+    # Extract network architecture from BC model to ensure exact matching
+    if bc_model_path and os.path.exists(bc_model_path):
+        print("Extracting network architecture from BC model...")
+        net_arch = extract_network_architecture(bc_model_path)
     else:
-        net_arch = [256, 256]  # Default
+        print("BC model not found, using default architecture [256, 256]")
+        net_arch = [256, 256]
     
     policy_kwargs = dict(
-        net_arch=net_arch,  # Dynamically matched to BC model
+        net_arch=net_arch,  # Dynamically extracted from BC model
     )
     
     model = PPOWithBCLoss(
@@ -150,17 +207,47 @@ def train_dapg_agent(env_name, expert_data_path, model_save_path=None, log_dir=N
             # We need to load it as a policy directly, not as a stable-baselines3 model
             from gymnasium.spaces import Box
             
-            # Create the same observation space as used in BC training
-            flat_obs_space = Box(
-                low=-np.inf, high=np.inf, shape=(13,), dtype=np.float32  # PegTransfer obs size
-            )
+            # Get the actual observation space from the environment
+            dummy_env = venv.envs[0].unwrapped if hasattr(venv.envs[0], 'unwrapped') else venv.envs[0]
+            obs_space = venv.observation_space
+            action_space = venv.action_space
             
             # Load BC policy directly
             bc_policy = MlpPolicy.load(bc_model_path)
             
-            # Copy BC policy weights to DAPG model
-            model.policy.load_state_dict(bc_policy.state_dict())
-            print("BC model weights loaded successfully.")
+            # Copy BC policy weights to DAPG model with flexible matching
+            try:
+                model.policy.load_state_dict(bc_policy.state_dict())
+                print("BC model weights loaded successfully (exact match).")
+            except RuntimeError as e:
+                print("Attempting flexible weight transfer...")
+                
+                # Get state dicts
+                bc_state = bc_policy.state_dict()
+                ppo_state = model.policy.state_dict()
+                
+                # Try to match and transfer compatible weights
+                transferred = 0
+                for ppo_key, ppo_tensor in ppo_state.items():
+                    # Try exact match first
+                    if ppo_key in bc_state and ppo_tensor.shape == bc_state[ppo_key].shape:
+                        ppo_state[ppo_key] = bc_state[ppo_key].clone()
+                        transferred += 1
+                    else:
+                        # Try to find similar keys (e.g., different network structure)
+                        for bc_key, bc_tensor in bc_state.items():
+                            if ppo_tensor.shape == bc_tensor.shape:
+                                # Check if keys are semantically similar
+                                if ('policy' in ppo_key and 'policy' in bc_key) or \
+                                   ('value' in ppo_key and 'value' in bc_key) or \
+                                   ('action' in ppo_key and 'action' in bc_key):
+                                    ppo_state[ppo_key] = bc_tensor.clone()
+                                    transferred += 1
+                                    break
+                
+                # Load the updated state dict
+                model.policy.load_state_dict(ppo_state)
+                print(f"BC model weights transferred: {transferred} layers")
         except Exception as e:
             print(f"Failed to load BC model: {e}")
             print("Starting from random initialization.")
@@ -201,6 +288,8 @@ if __name__ == "__main__":
                        help="Environment name to train on")
     parser.add_argument("--bc-model", required=True,
                        help="Path to BC model for initialization")
+    parser.add_argument("--expert-data", required=True,
+                       help="Path to expert demonstration data (.pkl file)")
     parser.add_argument("--output-dir", default=None,
                        help="Output directory for logs and model (if not specified, no files are saved)")
     parser.add_argument("--render", action="store_true",
@@ -220,12 +309,10 @@ if __name__ == "__main__":
     print(f"  Timesteps: {timesteps}")
     print(f"  BC weight: {bc_weight}")
     print(f"  BC model: {args.bc_model}")
+    print(f"  Expert data: {args.expert_data}")
     
-    # Auto-detect expert data path based on environment
-    if args.env == "NeedleReach-v0":
-        expert_data_path = os.path.join("data", "expert_data_needle_reach.pkl")
-    elif args.env == "PegTransfer-v0":
-        expert_data_path = os.path.join("data", "expert_data_peg_transfer.pkl")
+    # Use user-provided expert data path
+    expert_data_path = args.expert_data
     
     # Set up output paths only if output_dir is specified
     if args.output_dir:
