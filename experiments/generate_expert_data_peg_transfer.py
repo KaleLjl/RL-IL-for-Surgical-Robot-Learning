@@ -2,6 +2,7 @@ import os
 import pickle
 import gymnasium as gym
 import numpy as np
+import argparse
 import dvrk_gym  # Import to register the environment
 
 def generate_expert_data_peg_transfer(num_episodes=100, data_path="data/expert_data_peg_transfer.pkl"):
@@ -83,4 +84,12 @@ def generate_expert_data_peg_transfer(num_episodes=100, data_path="data/expert_d
     env.close()
 
 if __name__ == "__main__":
-    generate_expert_data_peg_transfer(num_episodes=1000, data_path="data/expert_data_peg_transfer.pkl")
+    parser = argparse.ArgumentParser(description="Generate expert data for PegTransfer task")
+    parser.add_argument("--num_episodes", type=int, default=1000, 
+                        help="Number of episodes to generate (default: 1000)")
+    parser.add_argument("--data_path", type=str, default="data/expert_data_peg_transfer.pkl",
+                        help="Path to save the expert data (default: data/expert_data_peg_transfer.pkl)")
+    
+    args = parser.parse_args()
+    
+    generate_expert_data_peg_transfer(num_episodes=args.num_episodes, data_path=args.data_path)

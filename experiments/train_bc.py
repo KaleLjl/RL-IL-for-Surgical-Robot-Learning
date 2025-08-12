@@ -184,13 +184,17 @@ if __name__ == "__main__":
     parser.add_argument("--env", required=True,
                        choices=["NeedleReach-v0", "PegTransfer-v0"],
                        help="Environment name to train on")
+    parser.add_argument("--expert-data", default=None,
+                       help="Path to expert data file (if not specified, uses default path based on environment)")
     parser.add_argument("--output-dir", default=None,
                        help="Output directory for logs and model (if not specified, no files are saved)")
     
     args = parser.parse_args()
     
-    # Auto-detect expert data path based on environment
-    if args.env == "NeedleReach-v0":
+    # Use provided expert data path or auto-detect based on environment
+    if args.expert_data:
+        expert_data_path = args.expert_data
+    elif args.env == "NeedleReach-v0":
         expert_data_path = os.path.join("experiments", "data", "expert_data_needle_reach.pkl")
     elif args.env == "PegTransfer-v0":
         expert_data_path = os.path.join("experiments", "data", "expert_data_peg_transfer.pkl")

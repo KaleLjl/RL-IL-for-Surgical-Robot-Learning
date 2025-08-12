@@ -2,6 +2,7 @@ import os
 import pickle
 import gymnasium as gym
 import numpy as np
+import argparse
 import dvrk_gym  # Import to register the environment
 
 def generate_expert_data(env_name, num_episodes=100, data_path="expert_data.pkl"):
@@ -76,6 +77,13 @@ def generate_expert_data(env_name, num_episodes=100, data_path="expert_data.pkl"
     env.close()
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate expert data for NeedleReach task")
+    parser.add_argument("--num_episodes", type=int, default=50,
+                        help="Number of episodes to generate (default: 50)")
+    parser.add_argument("--data_path", type=str, default="data/expert_data_needle_reach.pkl",
+                        help="Path to save the expert data (default: data/expert_data_needle_reach.pkl)")
+    
+    args = parser.parse_args()
+    
     ENV_NAME = "NeedleReach-v0"
-    DATA_SAVE_PATH = os.path.join("data", "expert_data_needle_reach.pkl")
-    generate_expert_data(ENV_NAME, num_episodes=50, data_path=DATA_SAVE_PATH)
+    generate_expert_data(ENV_NAME, num_episodes=args.num_episodes, data_path=args.data_path)
