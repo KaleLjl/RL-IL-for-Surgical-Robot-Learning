@@ -205,24 +205,6 @@ def evaluate_ppo_il_agent(env_name, model_path, n_episodes, output_dir=None, act
         except:
             model_hyperparams = {}
         
-        # Environment-specific training hyperparameters
-        if env_name == "NeedleReach-v0":
-            training_hyperparams = {
-                "timesteps": 300000,
-                "bc_weight": 0.05,
-                "base_learning_rate": 3e-4,  # PPO base learning rate
-                "imitation_learning": True
-            }
-        elif env_name == "PegTransfer-v0":
-            training_hyperparams = {
-                "timesteps": 500000,
-                "bc_weight": 0.02,
-                "base_learning_rate": 1e-4,  # PPO base learning rate  
-                "imitation_learning": True
-            }
-        else:
-            training_hyperparams = {"imitation_learning": True}
-        
         results = {
             "model_path": model_path,
             "environment": env_name,
@@ -238,10 +220,10 @@ def evaluate_ppo_il_agent(env_name, model_path, n_episodes, output_dir=None, act
             "episode_successes": [float(s) for s in episode_successes],
             "composite_score": float(composite_score),
             "hyperparameters": {
-                "training_hyperparams": training_hyperparams,
                 "model_hyperparams": model_hyperparams,
                 "reward_type": "sparse",
-                "observation_space": "flattened_dict"
+                "observation_space": "flattened_dict",
+                "imitation_learning": True
             }
         }
         
@@ -263,8 +245,6 @@ def evaluate_ppo_il_agent(env_name, model_path, n_episodes, output_dir=None, act
         with open(results_file, 'w') as f:
             json.dump(results, f, indent=2)
         print(f"Results saved to: {results_file}")
-        if training_hyperparams:
-            print(f"Hyperparameters included: {list(training_hyperparams.keys())}")
 
     # --- 5. Close Environment ---
     env.close()

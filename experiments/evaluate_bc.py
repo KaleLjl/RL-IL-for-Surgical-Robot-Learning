@@ -197,32 +197,6 @@ def main():
         except:
             model_info = {}
         
-        # Environment-specific hyperparameters used in training
-        if env_name == "PegTransfer-v0":
-            training_hyperparams = {
-                "learning_rate": 5e-5,
-                "net_arch": [128, 128],
-                "n_epochs": 25,
-                "weight_decay": 1e-3,
-                "batch_size": 64
-            }
-        elif env_name == "NeedleReach-v0":
-            training_hyperparams = {
-                "learning_rate": 1e-4,
-                "net_arch": [256, 256],
-                "n_epochs": 200,
-                "weight_decay": 1e-5,
-                "batch_size": 64
-            }
-        else:
-            training_hyperparams = {
-                "learning_rate": 5e-5,
-                "net_arch": [128, 128],
-                "n_epochs": 50,
-                "weight_decay": 5e-4,
-                "batch_size": 64
-            }
-        
         results = {
             "model_path": args.model,
             "environment": env_name,
@@ -234,7 +208,6 @@ def main():
             "episode_rewards": episode_rewards,
             "composite_score": composite_score,
             "hyperparameters": {
-                "training_hyperparams": training_hyperparams,
                 "model_info": model_info,
                 "reward_type": "sparse",
                 "observation_space": "flattened_dict"
@@ -259,7 +232,6 @@ def main():
         with open(results_file, 'w') as f:
             json.dump(results, f, indent=2)
         print(f"Results saved to: {results_file}")
-        print(f"Hyperparameters included: {list(training_hyperparams.keys())}")
 
 if __name__ == "__main__":
     main()

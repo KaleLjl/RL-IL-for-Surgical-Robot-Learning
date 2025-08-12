@@ -205,24 +205,6 @@ def evaluate_ppo_agent(env_name, model_path, n_episodes, output_dir=None, action
         except:
             model_hyperparams = {}
         
-        # Environment-specific training hyperparameters
-        if env_name == "NeedleReach-v0":
-            training_hyperparams = {
-                "timesteps": 100000,
-                "learning_rate": 3e-4,
-                "n_steps": 2048,
-                "batch_size": 64
-            }
-        elif env_name == "PegTransfer-v0":
-            training_hyperparams = {
-                "timesteps": 300000,
-                "learning_rate": 1e-4,
-                "n_steps": 4096,
-                "batch_size": 256
-            }
-        else:
-            training_hyperparams = {}
-        
         results = {
             "model_path": model_path,
             "environment": env_name,
@@ -238,7 +220,6 @@ def evaluate_ppo_agent(env_name, model_path, n_episodes, output_dir=None, action
             "episode_successes": [float(s) for s in episode_successes],
             "composite_score": float(composite_score),
             "hyperparameters": {
-                "training_hyperparams": training_hyperparams,
                 "model_hyperparams": model_hyperparams,
                 "reward_type": "dense",
                 "observation_space": "flattened_dict"
@@ -263,8 +244,6 @@ def evaluate_ppo_agent(env_name, model_path, n_episodes, output_dir=None, action
         with open(results_file, 'w') as f:
             json.dump(results, f, indent=2)
         print(f"Results saved to: {results_file}")
-        if training_hyperparams:
-            print(f"Hyperparameters included: {list(training_hyperparams.keys())}")
 
     # --- 5. Close Environment ---
     env.close()
