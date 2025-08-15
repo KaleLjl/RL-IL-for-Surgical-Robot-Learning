@@ -4,8 +4,47 @@ import os
 from stable_baselines3.common.policies import ActorCriticPolicy
 import pathlib
 import argparse
+import pybullet as p
+import imageio
 
 import dvrk_gym
+
+def get_custom_camera_frame(env):
+    """Get a frame with custom camera settings for better video recording."""
+    # Use custom camera settings for video recording
+    scaling = getattr(env.unwrapped, 'SCALING', 1.0)
+    
+    # Custom camera settings - moved back and adjusted angle  
+    view_matrix = p.computeViewMatrixFromYawPitchRoll(
+        cameraTargetPosition=(-0.05 * scaling, 0, 0.375 * scaling),
+        distance=1.2 * scaling,  # Moved camera further back
+        yaw=90,
+        pitch=-25,  # Slightly less steep angle
+        roll=0,
+        upAxisIndex=2
+    )
+    
+    proj_matrix = p.computeProjectionMatrixFOV(
+        fov=45,
+        aspect=16/9,  # Standard video aspect ratio
+        nearVal=0.1,
+        farVal=20.0
+    )
+    
+    # Render frame with custom camera
+    width, height = 1280, 720  # Higher resolution for better video quality
+    camera_data = p.getCameraImage(
+        width=width,
+        height=height,
+        viewMatrix=view_matrix,
+        projectionMatrix=proj_matrix,
+        renderer=p.ER_BULLET_HARDWARE_OPENGL
+    )
+    
+    # Extract RGB array from camera data (first element)
+    rgb_array = camera_data[2]  # RGB data is at index 2
+    rgb_array = np.array(rgb_array).reshape(height, width, 4)[:, :, :3]
+    return rgb_array
 
 def flatten_obs(obs):
     """
@@ -86,6 +125,10 @@ def main():
                        help="Enable action noise robustness testing")
     parser.add_argument("--noise-std", type=float, default=0.1,
                        help="Standard deviation of action noise for robustness testing")
+    parser.add_argument("--save-video", action="store_true",
+                       help="Save evaluation videos")
+    parser.add_argument("--video-dir", default="videos",
+                       help="Directory to save evaluation videos (default: videos)")
     
     args = parser.parse_args()
     
@@ -100,8 +143,26 @@ def main():
         print(f"Warning: Could not detect environment from model path, using {env_name}")
     
     print(f"Loading environment: {env_name}")
-    render_mode = None if args.no_render else "human"
+    
+    # Determine render mode based on video saving and rendering options
+    if args.save_video:
+        render_mode = "rgb_array"  # Required for video recording
+    elif args.no_render:
+        render_mode = None
+    else:
+        render_mode = "human"
+    
     env = gym.make(env_name, render_mode=render_mode)
+    
+    # Set up video recording if requested
+    video_writer = None
+    video_frames = []
+    if args.save_video:
+        os.makedirs(args.video_dir, exist_ok=True)
+        video_folder = os.path.join(args.video_dir, "bc_evaluation")
+        os.makedirs(video_folder, exist_ok=True)
+        video_path = os.path.join(video_folder, "bc_eval_combined_all_episodes.mp4")
+        print(f"Video recording enabled. Combined video will be saved to: {video_path}")
 
     print(f"Loading model from: {args.model}")
     # The policy was saved as a standard SB3 ActorCriticPolicy,
@@ -128,7 +189,13 @@ def main():
             
             obs, reward, terminated, truncated, info = env.step(action)
             
-            if not args.no_render:
+            # Record frame for video if recording is enabled
+            if args.save_video:
+                frame = get_custom_camera_frame(env)
+                video_frames.append(frame)
+            
+            # Only render manually if we're not saving video and not in no-render mode
+            if not args.save_video and not args.no_render:
                 env.render()
             episode_reward += reward
 
@@ -138,6 +205,12 @@ def main():
         total_rewards += episode_reward
         episode_rewards.append(episode_reward)
         print(f"Episode {episode + 1}/{args.episodes} - Reward: {episode_reward:.2f} - Success: {info.get('is_success', False)}")
+
+    # Save video if recording was enabled
+    if args.save_video and video_frames:
+        print("Saving video...")
+        imageio.mimsave(video_path, video_frames, fps=30)
+        print(f"Video saved successfully to: {video_path}")
 
     success_rate = (successes / args.episodes) * 100
     avg_reward = total_rewards / args.episodes

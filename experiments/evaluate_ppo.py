@@ -4,10 +4,49 @@ import os
 import gymnasium as gym
 import numpy as np
 from stable_baselines3 import PPO
+import pybullet as p
+import imageio
 
 # Import dvrk_gym to register the environment
 import dvrk_gym
 from dvrk_gym.utils.wrappers import FlattenDictObsWrapper
+
+def get_custom_camera_frame(env):
+    """Get a frame with custom camera settings for better video recording."""
+    # Use custom camera settings for video recording
+    scaling = getattr(env.unwrapped, 'SCALING', 1.0)
+    
+    # Custom camera settings - moved back and adjusted angle  
+    view_matrix = p.computeViewMatrixFromYawPitchRoll(
+        cameraTargetPosition=(-0.05 * scaling, 0, 0.375 * scaling),
+        distance=1.2 * scaling,  # Moved camera further back
+        yaw=90,
+        pitch=-25,  # Slightly less steep angle
+        roll=0,
+        upAxisIndex=2
+    )
+    
+    proj_matrix = p.computeProjectionMatrixFOV(
+        fov=45,
+        aspect=16/9,  # Standard video aspect ratio
+        nearVal=0.1,
+        farVal=20.0
+    )
+    
+    # Render frame with custom camera
+    width, height = 1280, 720  # Higher resolution for better video quality
+    camera_data = p.getCameraImage(
+        width=width,
+        height=height,
+        viewMatrix=view_matrix,
+        projectionMatrix=proj_matrix,
+        renderer=p.ER_BULLET_HARDWARE_OPENGL
+    )
+    
+    # Extract RGB array from camera data (first element)
+    rgb_array = camera_data[2]  # RGB data is at index 2
+    rgb_array = np.array(rgb_array).reshape(height, width, 4)[:, :, :3]
+    return rgb_array
 
 def evaluate_with_action_noise(model, env, episodes=50, noise_std=0.1):
     """
@@ -57,7 +96,7 @@ def evaluate_with_action_noise(model, env, episodes=50, noise_std=0.1):
     
     return success_rate, avg_reward, episode_rewards
 
-def evaluate_ppo_agent(env_name, model_path, n_episodes, output_dir=None, action_noise_test=False, noise_std=0.1):
+def evaluate_ppo_agent(env_name, model_path, n_episodes, output_dir=None, action_noise_test=False, noise_std=0.1, save_video=False, video_dir="videos", no_render=False):
     """
     Evaluates a trained PPO agent in the specified environment.
 
@@ -74,7 +113,15 @@ def evaluate_ppo_agent(env_name, model_path, n_episodes, output_dir=None, action
 
     # --- 1. Create Environment ---
     # PPO models use dense rewards and flattened observations
-    render_mode = None if '--no-render' in sys.argv else 'human'
+    
+    # Determine render mode based on video saving and rendering options
+    if save_video:
+        render_mode = "rgb_array"  # Required for video recording
+    elif no_render:
+        render_mode = None
+    else:
+        render_mode = 'human'
+        
     env_kwargs = {'render_mode': render_mode, 'use_dense_reward': True}
     
     env = gym.make(env_name, **env_kwargs)
@@ -82,6 +129,16 @@ def evaluate_ppo_agent(env_name, model_path, n_episodes, output_dir=None, action
     # Apply flattened wrapper (PPO models were trained with this)
     print("Applying FlattenDictObsWrapper to the environment.")
     env = FlattenDictObsWrapper(env)
+    
+    # Set up video recording if requested
+    video_writer = None
+    video_frames = []
+    if save_video:
+        os.makedirs(video_dir, exist_ok=True)
+        video_folder = os.path.join(video_dir, "ppo_evaluation")
+        os.makedirs(video_folder, exist_ok=True)
+        video_path = os.path.join(video_folder, "ppo_eval_combined_all_episodes.mp4")
+        print(f"Video recording enabled. Combined video will be saved to: {video_path}")
     
     print("Environment created.")
 
@@ -112,8 +169,13 @@ def evaluate_ppo_agent(env_name, model_path, n_episodes, output_dir=None, action
             obs, reward, done, truncated, info = env.step(action)
             total_reward += reward
 
-            # Render the environment if render mode is enabled
-            if render_mode:
+            # Record frame for video if recording is enabled
+            if save_video:
+                frame = get_custom_camera_frame(env)
+                video_frames.append(frame)
+
+            # Only render manually if we're not saving video and render mode is enabled
+            if render_mode == 'human':
                 env.render()
 
         print(f"Episode finished.")
@@ -128,6 +190,12 @@ def evaluate_ppo_agent(env_name, model_path, n_episodes, output_dir=None, action
             print("Success status not available for this episode.")
 
         episode_rewards.append(total_reward)
+
+    # Save video if recording was enabled
+    if save_video and video_frames:
+        print("Saving video...")
+        imageio.mimsave(video_path, video_frames, fps=30)
+        print(f"Video saved successfully to: {video_path}")
 
     # Action noise robustness test (if enabled)
     action_noise_success_rate = None
@@ -286,6 +354,17 @@ if __name__ == "__main__":
         default=0.1,
         help="Standard deviation of action noise for robustness testing (default: 0.1)."
     )
+    parser.add_argument(
+        "--save-video",
+        action="store_true",
+        help="Save evaluation videos."
+    )
+    parser.add_argument(
+        "--video-dir",
+        type=str,
+        default="videos",
+        help="Directory to save evaluation videos (default: videos)."
+    )
 
     args = parser.parse_args()
     
@@ -308,5 +387,8 @@ if __name__ == "__main__":
         n_episodes=args.episodes,
         output_dir=args.output_dir,
         action_noise_test=args.action_noise_test,
-        noise_std=args.noise_std
+        noise_std=args.noise_std,
+        save_video=args.save_video,
+        video_dir=args.video_dir,
+        no_render=args.no_render
     )

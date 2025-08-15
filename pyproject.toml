@@ -31,6 +31,9 @@ dependencies = [
     "optuna>=3.0.0",
     "plotly>=5.0.0",
     "kaleido>=0.2.1",
+    # Video recording dependencies
+    "moviepy>=1.0.0",
+    "imageio>=2.0.0",
 ]
 
 [tool.setuptools.packages.find]
