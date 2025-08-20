@@ -18,6 +18,23 @@ This project implements and compares three machine learning approaches for contr
 
 The environments simulate two fundamental surgical tasks using the da Vinci Patient Side Manipulator (PSM) robot in PyBullet physics simulation.
 
+### 🔄 Relation to SurRoL
+
+This project is a **modernized implementation** inspired by [SurRoL](https://github.com/med-air/SurRoL) (Surgical Robot Learning) with significant technological improvements:
+
+**Key Upgrades from SurRoL:**
+- **🆕 Modern ML Stack**: Migrated from OpenAI Gym to Gymnasium (actively maintained)
+- **🆕 Latest Libraries**: Updated to Stable-Baselines3 v2.2+ and Imitation v1.0+
+- **🆕 Hybrid Algorithms**: Added PPO+BC implementation for improved performance
+- **🆕 Container Support**: Full Docker integration with GPU acceleration
+- **🆕 Advanced Optimization**: Optuna-based hyperparameter optimization
+- **🆕 Robust Evaluation**: Comprehensive metrics including noise robustness testing
+
+**Why This Version:**
+- SurRoL uses deprecated dependencies (OpenAI Gym, older SB3 versions)
+- This implementation focuses on systematic algorithm comparison and reproducible research
+- Enhanced experimental framework with modern best practices for ML research
+
 ## Surgical Tasks
 
 ### 1. Needle Reach (`NeedleReach-v0`)
@@ -32,13 +49,6 @@ The environments simulate two fundamental surgical tasks using the da Vinci Pati
 - **Success Criteria**: Successfully place block on destination peg
 - **Episode Length**: 150 steps
 
-## Key Features
-
-- **Physics-based Simulation**: Realistic da Vinci PSM kinematics and dynamics
-- **Expert Oracle Policies**: Automated generation of high-quality demonstration data
-- **Multiple Learning Algorithms**: BC, PPO, and hybrid PPO+BC implementations
-- **Comprehensive Evaluation**: Success rates, robustness testing, hyperparameter optimization
-- **Reproducible Research**: Fixed seeds, logging, and systematic experimental design
 
 ## Installation
 
@@ -64,19 +74,8 @@ docker exec -it dvrk_dev bash
 python3 -c "import dvrk_gym; print('dVRK Gym installed successfully')"
 ```
 
-**Why Docker Only**:
-- ✅ Pre-configured CUDA 11.4 + OpenGL support
-- ✅ All dependencies automatically installed
-- ✅ GUI forwarding for visualization
-- ✅ Consistent environment across different systems
-- ✅ No dependency conflicts with host system
-- ✅ Eliminates complex local setup requirements
+**Benefits**: Pre-configured CUDA 11.4, OpenGL, dependencies, and GPU acceleration in a consistent containerized environment.
 
-### Dependencies
-- **Simulation**: PyBullet, Gymnasium
-- **Machine Learning**: Stable-Baselines3, Imitation, PyTorch  
-- **Optimization**: Optuna (for hyperparameter tuning)
-- **Utilities**: NumPy, Matplotlib, MoviePy (video recording)
 
 ## Quick Start (Using Docker 🐳)
 
@@ -148,11 +147,6 @@ python3 evaluate_bc.py --model results/bc_needle_reach/bc_needle_reach_*.zip --e
 python3 experiment_hyperopt_unified.py --help
 ```
 
-### 💡 Docker Tips
-- **File Persistence**: All changes are automatically synced with your host system via volume mounts
-- **GPU Access**: NVIDIA runtime provides automatic GPU acceleration
-- **Multiple Sessions**: Use `docker exec -it dvrk_dev bash` to open additional terminal sessions
-- **Stop Container**: `docker-compose down` when finished
 
 ## Project Structure
 
@@ -180,56 +174,23 @@ summer_project/
 ```
 
 
-## Algorithm Implementation Details
+## Algorithm Overview
 
-### Behavioral Cloning (BC)
-- **Network Architecture**: 2-layer MLP (256-256 for needle reach, 128-128 for peg transfer)
-- **Training**: Supervised learning with L2 regularization
-- **Data**: 100-200 expert demonstrations per task
-- **Optimization**: Adam optimizer with early stopping
-
-### PPO (Proximal Policy Optimization)  
-- **Policy Network**: Shared feature extractor with separate actor/critic heads
-- **Training**: On-policy reinforcement learning
-- **Exploration**: Gaussian action noise with entropy regularization
-- **Known Limitation**: Cannot solve complex sequential manipulation tasks
-
-### PPO+BC (Hybrid)
-- **Initialization**: Pre-trained BC model as starting policy
-- **Loss Function**: Combined PPO loss + weighted BC loss (α=0.05 optimal)
-- **Training**: Alternating PPO updates with BC guidance
-- **Advantage**: Maintains BC performance while enabling RL improvement
+- **BC**: Supervised learning from demonstrations (2-layer MLP, Adam optimizer)
+- **PPO**: On-policy RL with actor-critic architecture (fails on complex manipulation)  
+- **PPO+BC**: Hybrid approach combining PPO with BC guidance (α=0.05 weighting)
 
 ## Advanced Docker Usage
 
-### Container Management
 ```bash
-# Start container in detached mode
-docker-compose up -d
+# Container management
+docker-compose up -d                    # Start container
+docker-compose down                     # Stop container
+docker-compose logs -f dvrk-dev        # View logs
 
-# View container logs
-docker-compose logs -f dvrk-dev
-
-# Stop container
-docker-compose down
-
-# Rebuild container after code changes
-docker-compose build --no-cache
-```
-
-### GPU and Display Forwarding
-The Docker setup includes:
-- **NVIDIA GPU Runtime**: Automatic CUDA acceleration
-- **X11 Forwarding**: GUI applications (PyBullet visualization) work seamlessly
-- **Volume Mounts**: Your code changes are instantly reflected in the container
-
-### Running Background Training
-```bash
-# Run long training jobs in background
+# Background training
 docker exec -d dvrk_dev python3 experiments/train_ppo.py --env NeedleReach-v0 --output-dir results/ppo_needle_reach
-
-# Monitor training progress
-docker exec dvrk_dev tail -f results/ppo_needle_reach/logs/training.log
+docker exec dvrk_dev tail -f results/ppo_needle_reach/logs/training.log  # Monitor progress
 ```
 
 
@@ -255,6 +216,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 - **UCL Robotics Group** for supervision and computational resources
+- **SurRoL Team** ([MedAIR Lab](https://github.com/med-air/SurRoL)) for the original surgical robot learning framework that inspired this work
 - **da Vinci Research Community** for surgical robotics insights  
 - **Open Source Libraries**: Stable-Baselines3, Imitation, PyBullet, and Gymnasium teams
 
