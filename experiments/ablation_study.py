@@ -166,13 +166,39 @@ def train_ppo_bc_with_alpha(env_name, expert_data_path, alpha, model_save_path=N
     # --- 4. Setup PPOWithBCLoss Agent ---
     print(f"Initializing PPOWithBCLoss agent with alpha={alpha}...")
     
+    # Environment-specific hyperparameters
+    if env_name == "NeedleReach-v0":
+        # NeedleReach optimal parameters
+        default_net_arch = [256, 256]
+        learning_rate = 1e-4
+        n_steps = 4096
+        batch_size = 256
+        n_epochs = 5
+        bc_batch_size = 1024
+    elif env_name == "PegTransfer-v0":
+        # PegTransfer optimal parameters (smaller network, adjusted hyperparams)
+        default_net_arch = [128, 128]
+        learning_rate = 1e-4
+        n_steps = 4096
+        batch_size = 256
+        n_epochs = 5
+        bc_batch_size = 1024
+    else:
+        # Fallback to default parameters
+        default_net_arch = [256, 256]
+        learning_rate = 1e-4
+        n_steps = 4096
+        batch_size = 256
+        n_epochs = 5
+        bc_batch_size = 1024
+    
     # Extract network architecture from BC model to ensure exact matching
     if bc_model_path and os.path.exists(bc_model_path):
         print("Extracting network architecture from BC model...")
         net_arch = extract_network_architecture(bc_model_path)
     else:
-        print("BC model not found, using default architecture [256, 256]")
-        net_arch = [256, 256]
+        print(f"BC model not found, using environment-specific architecture {default_net_arch}")
+        net_arch = default_net_arch
     
     policy_kwargs = dict(
         net_arch=net_arch,
@@ -184,12 +210,12 @@ def train_ppo_bc_with_alpha(env_name, expert_data_path, alpha, model_save_path=N
         env=venv,
         expert_demonstrations=expert_demonstrations,
         bc_loss_weight=alpha,  # Use alpha parameter here
-        bc_batch_size=1024,
+        bc_batch_size=bc_batch_size,
         tensorboard_log=log_dir,
-        learning_rate=1e-4,
-        n_steps=4096,
-        batch_size=256,
-        n_epochs=5,
+        learning_rate=learning_rate,
+        n_steps=n_steps,
+        batch_size=batch_size,
+        n_epochs=n_epochs,
         gamma=0.99,
         gae_lambda=0.95,
         clip_range=0.2,
@@ -330,7 +356,7 @@ def train_ppo_bc_with_alpha(env_name, expert_data_path, alpha, model_save_path=N
     return results
 
 def run_ablation_study(env_name, expert_data_path, bc_model_path, output_dir, 
-                       alphas, timesteps=300000, render=False):
+                       alphas=None, timesteps=None, render=False):
     """
     Run full ablation study with multiple alpha values.
     
@@ -339,13 +365,27 @@ def run_ablation_study(env_name, expert_data_path, bc_model_path, output_dir,
         expert_data_path (str): Path to expert demonstrations.
         bc_model_path (str): Path to BC model for initialization.
         output_dir (str): Base output directory for all results.
-        alphas (list): List of alpha values to test.
-        timesteps (int): Training timesteps per run.
+        alphas (list): List of alpha values to test (if None, uses env-specific defaults).
+        timesteps (int): Training timesteps per run (if None, uses env-specific defaults).
         render (bool): Whether to render during training.
     
     Returns:
         dict: Results from all runs.
     """
+    # Use environment-specific defaults if alphas not specified
+    if alphas is None:
+        # Use same alpha values for both environments for consistency
+        alphas = [0.0, 0.05, 0.2, 0.5, 1.0]
+    
+    # Use environment-specific defaults if timesteps not specified
+    if timesteps is None:
+        if env_name == "NeedleReach-v0":
+            timesteps = 300000
+        elif env_name == "PegTransfer-v0":
+            timesteps = 500000  # or 700000 based on train_ppo+bc.py
+        else:
+            timesteps = 300000  # default fallback
+    
     print("=" * 60)
     print(f"ABLATION STUDY: PPO+BC on {env_name}")
     print(f"Alpha values: {alphas}")
@@ -407,19 +447,30 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", required=True,
                        help="Base output directory for all ablation study results")
     parser.add_argument("--alphas", nargs='+', type=float,
-                       default=[0.0, 0.05, 0.2, 0.5, 1.0],
-                       help="Alpha values (BC weights) to test (default: 0.0 0.05 0.2 0.5 1.0)")
-    parser.add_argument("--timesteps", type=int, default=300000,
-                       help="Training timesteps per run (default: 300000)")
+                       default=None,
+                       help="Alpha values (BC weights) to test (default: [0.0, 0.05, 0.2, 0.5, 1.0] for both environments)")
+    parser.add_argument("--timesteps", type=int, default=None,
+                       help="Training timesteps per run (default: env-specific - 300k for NeedleReach, 500k for PegTransfer)")
     parser.add_argument("--render", action="store_true",
                        help="Enable rendering during training (default: disabled)")
     
     args = parser.parse_args()
     
+    # Display configuration with defaults
+    if args.alphas is None:
+        display_alphas = [0.0, 0.05, 0.2, 0.5, 1.0]
+    else:
+        display_alphas = args.alphas
+    
+    if args.timesteps is None:
+        display_timesteps = 300000 if args.env == "NeedleReach-v0" else 500000
+    else:
+        display_timesteps = args.timesteps
+    
     print(f"Starting ablation study for PPO+BC on {args.env}")
     print(f"Configuration:")
-    print(f"  Alpha values: {args.alphas}")
-    print(f"  Timesteps: {args.timesteps}")
+    print(f"  Alpha values: {display_alphas}")
+    print(f"  Timesteps: {display_timesteps}")
     print(f"  BC model: {args.bc_model}")
     print(f"  Expert data: {args.expert_data}")
     print(f"  Output directory: {args.output_dir}")
