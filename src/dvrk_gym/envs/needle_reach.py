@@ -7,6 +7,7 @@ Needle Reach Task Environment for the dVRK.
 This task requires the robot to move its end-effector to a target needle.
 """
 import os
+from collections import deque
 import numpy as np
 import pybullet as p
 from gymnasium import spaces
@@ -47,6 +48,14 @@ class NeedleReachEnv(DVRKEnv):
         super().__init__(render_mode=self.render_mode)
         
         self.success_threshold = self.distance_threshold
+        
+        # Success criterion: require K of last M steps inside threshold (with hysteresis)
+        # Defaults: K=3, M=5
+        self.success_window_size = 5
+        self.success_required = 3
+        self._success_window = deque(maxlen=self.success_window_size)
+        self.success_enter_threshold = self.distance_threshold
+        self.success_exit_threshold = float(self.distance_threshold) * 1.5
 
     def _env_setup(self):
         """
@@ -83,6 +92,11 @@ class NeedleReachEnv(DVRKEnv):
     def _get_action_space(self) -> spaces.Space:
         # Action is a 6-DoF delta pose (dx, dy, dz, d_roll, d_pitch, d_yaw)
         return spaces.Box(low=-1.0, high=1.0, shape=(6,), dtype=np.float32)
+
+    def reset(self, seed=None, options=None):
+        # Reset success window at the beginning of each episode
+        self._success_window.clear()
+        return super().reset(seed=seed, options=options)
 
     def _get_observation_space(self) -> spaces.Space:
         # Observation is a dictionary containing robot and task states
@@ -173,7 +187,17 @@ class NeedleReachEnv(DVRKEnv):
 
     def _is_success(self, obs: dict) -> bool:
         dist = np.linalg.norm(obs['achieved_goal'] - obs['desired_goal'])
-        return dist < self.success_threshold
+        # Hysteresis logic for inside/outside decision
+        prev = self._success_window[-1] if len(self._success_window) > 0 else False
+        if dist <= self.success_enter_threshold:
+            inside = True
+        elif dist >= self.success_exit_threshold:
+            inside = False
+        else:
+            inside = prev
+        # Update window and evaluate K-of-M
+        self._success_window.append(inside)
+        return sum(1 for v in self._success_window if v) >= self.success_required
 
     def _get_reward(self, obs: dict) -> float:
         """
