@@ -60,11 +60,15 @@ def evaluate_with_action_noise(model, env, episodes=50, noise_std=0.1):
         noise_std: Standard deviation of Gaussian noise to add to actions
         
     Returns:
-        Tuple of (success_rate, average_reward, episode_rewards)
+        Tuple of (success_rate, average_reward, episode_rewards, episode_successes)
     """
     episode_rewards = []
     episode_successes = []
     
+    # Precompute action scaling for relative noise (noise_std interpreted as alpha in [0,1])
+    low, high = env.action_space.low, env.action_space.high
+    scale = (high - low) / 2.0
+
     for episode in range(episodes):
         obs, info = env.reset()
         done = False
@@ -75,8 +79,8 @@ def evaluate_with_action_noise(model, env, episodes=50, noise_std=0.1):
             # Get action from model
             action, _states = model.predict(obs, deterministic=True)
             
-            # Add Gaussian noise to action
-            action_noise = np.random.normal(0, noise_std, action.shape)
+            # Add relative Gaussian noise to action (range-aware)
+            action_noise = np.random.normal(0, noise_std * scale, action.shape)
             noisy_action = action + action_noise
             
             # Clip action to valid range
@@ -94,7 +98,7 @@ def evaluate_with_action_noise(model, env, episodes=50, noise_std=0.1):
     success_rate = np.mean(episode_successes) * 100
     avg_reward = np.mean(episode_rewards)
     
-    return success_rate, avg_reward, episode_rewards
+    return success_rate, avg_reward, episode_rewards, episode_successes
 
 def evaluate_ppo_agent(env_name, model_path, n_episodes, output_dir=None, action_noise_test=False, noise_std=0.1, save_video=False, video_dir="videos", no_render=False):
     """
@@ -198,24 +202,19 @@ def evaluate_ppo_agent(env_name, model_path, n_episodes, output_dir=None, action
         print(f"Video saved successfully to: {video_path}")
 
     # Action noise robustness test (if enabled)
+    # If noise evaluation is requested, run only the noisy evaluation and use it as final results
     action_noise_success_rate = None
     action_noise_avg_reward = None
     action_noise_episode_rewards = []
-    composite_score = np.mean(episode_successes) * 100 if episode_successes else 0.0  # Default to standard score
-    
+
     if action_noise_test:
-        print(f"\n--- Running Action Noise Robustness Test (noise_std={noise_std}) ---")
-        action_noise_success_rate, action_noise_avg_reward, action_noise_episode_rewards = evaluate_with_action_noise(
+        print(f"\n--- Running Action Noise Evaluation Only (noise_std={noise_std}) ---")
+        action_noise_success_rate, action_noise_avg_reward, action_noise_episode_rewards, action_noise_episode_successes = evaluate_with_action_noise(
             model, env, n_episodes, noise_std
         )
-        
-        # Compute composite score: 70% standard + 30% noisy
-        standard_success_rate = np.mean(episode_successes) * 100 if episode_successes else 0.0
-        composite_score = 0.7 * standard_success_rate + 0.3 * action_noise_success_rate
-        
-        print(f"Action Noise Success Rate: {action_noise_success_rate:.2f}%")
-        print(f"Action Noise Average Reward: {action_noise_avg_reward:.2f}")
-        print(f"Composite Score: {composite_score:.2f}%")
+        # Overwrite standard metrics with noisy ones for reporting
+        episode_rewards = action_noise_episode_rewards
+        episode_successes = action_noise_episode_successes
 
     # --- 4. Print Final Statistics ---
     print("\n" + "="*50)
@@ -246,7 +245,6 @@ def evaluate_ppo_agent(env_name, model_path, n_episodes, output_dir=None, action
     if action_noise_test:
         print(f"Action Noise Success Rate: {action_noise_success_rate:.2f}%")
         print(f"Action Noise Average Reward: {action_noise_avg_reward:.2f}")
-        print(f"Composite Score: {composite_score:.2f}%")
     
     print("="*50)
     
@@ -286,7 +284,6 @@ def evaluate_ppo_agent(env_name, model_path, n_episodes, output_dir=None, action
             "num_successes": int(num_successes) if 'num_successes' in locals() else 0,
             "episode_rewards": [float(r) for r in episode_rewards],
             "episode_successes": [float(s) for s in episode_successes],
-            "composite_score": float(composite_score),
             "hyperparameters": {
                 "model_hyperparams": model_hyperparams,
                 "reward_type": "dense",
@@ -296,12 +293,10 @@ def evaluate_ppo_agent(env_name, model_path, n_episodes, output_dir=None, action
         
         # Add action noise test results if performed
         if action_noise_test:
+            # Top-level metrics already reflect noisy evaluation
             results["action_noise_test"] = {
                 "enabled": True,
-                "noise_std": noise_std,
-                "success_rate": action_noise_success_rate,
-                "average_reward": action_noise_avg_reward,
-                "episode_rewards": action_noise_episode_rewards
+                "noise_std": noise_std
             }
         else:
             results["action_noise_test"] = {
@@ -352,7 +347,7 @@ if __name__ == "__main__":
         "--noise-std",
         type=float,
         default=0.1,
-        help="Standard deviation of action noise for robustness testing (default: 0.1)."
+        help="Relative noise alpha in [0,1]; actual sigma = alpha * (action_range/2)."
     )
     parser.add_argument(
         "--save-video",

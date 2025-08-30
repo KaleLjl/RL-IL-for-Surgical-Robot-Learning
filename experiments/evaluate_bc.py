@@ -69,12 +69,16 @@ def evaluate_with_action_noise(policy, env, episodes=50, noise_std=0.1):
         noise_std: Standard deviation of Gaussian noise to add to actions
         
     Returns:
-        Tuple of (success_rate, average_reward, episode_rewards)
+        Tuple of (success_rate, average_reward, episode_rewards, successes)
     """
     successes = 0
     total_rewards = 0
     episode_rewards = []
     
+    # Precompute action scaling for relative noise (noise_std interpreted as alpha in [0,1])
+    low, high = env.action_space.low, env.action_space.high
+    scale = (high - low) / 2.0
+
     for episode in range(episodes):
         obs, info = env.reset()
         terminated = False
@@ -86,8 +90,8 @@ def evaluate_with_action_noise(policy, env, episodes=50, noise_std=0.1):
             flat_obs = flatten_obs(obs)
             action, _ = policy.predict(flat_obs, deterministic=True)
             
-            # Add Gaussian noise to action
-            action_noise = np.random.normal(0, noise_std, action.shape)
+            # Add relative Gaussian noise to action (range-aware)
+            action_noise = np.random.normal(0, noise_std * scale, action.shape)
             noisy_action = action + action_noise
             
             # Clip action to valid range (assuming [-1, 1])
@@ -105,7 +109,7 @@ def evaluate_with_action_noise(policy, env, episodes=50, noise_std=0.1):
     success_rate = (successes / episodes) * 100
     avg_reward = total_rewards / episodes
     
-    return success_rate, avg_reward, episode_rewards
+    return success_rate, avg_reward, episode_rewards, successes
 
 def main():
     """
@@ -124,7 +128,7 @@ def main():
     parser.add_argument("--action-noise-test", action="store_true",
                        help="Enable action noise robustness testing")
     parser.add_argument("--noise-std", type=float, default=0.1,
-                       help="Standard deviation of action noise for robustness testing")
+                       help="Relative noise alpha in [0,1]; sigma = alpha * (action_range/2)")
     parser.add_argument("--save-video", action="store_true",
                        help="Save evaluation videos")
     parser.add_argument("--video-dir", default="videos",
@@ -215,24 +219,20 @@ def main():
     success_rate = (successes / args.episodes) * 100
     avg_reward = total_rewards / args.episodes
     
-    # Action noise robustness test (if enabled)
+    # If noise evaluation is requested, run only the noisy evaluation and use it as final results
     action_noise_success_rate = None
     action_noise_avg_reward = None
     action_noise_episode_rewards = []
-    composite_score = success_rate  # Default to standard score
-    
+
     if args.action_noise_test:
-        print(f"\n--- Running Action Noise Robustness Test (noise_std={args.noise_std}) ---")
-        action_noise_success_rate, action_noise_avg_reward, action_noise_episode_rewards = evaluate_with_action_noise(
+        print(f"\n--- Running Action Noise Evaluation Only (noise_std={args.noise_std}) ---")
+        action_noise_success_rate, action_noise_avg_reward, action_noise_episode_rewards, _succ = evaluate_with_action_noise(
             policy, env, args.episodes, args.noise_std
         )
-        
-        # Compute composite score: 70% standard + 30% noisy
-        composite_score = 0.7 * success_rate + 0.3 * action_noise_success_rate
-        
-        print(f"Action Noise Success Rate: {action_noise_success_rate:.2f}%")
-        print(f"Action Noise Average Reward: {action_noise_avg_reward:.2f}")
-        print(f"Composite Score: {composite_score:.2f}%")
+        # Overwrite standard metrics with noisy ones for reporting
+        success_rate = action_noise_success_rate
+        avg_reward = action_noise_avg_reward
+        episode_rewards = action_noise_episode_rewards
 
     env.close()
 
@@ -246,7 +246,6 @@ def main():
         print(f"Action Noise Evaluation:")
         print(f"  Success Rate: {action_noise_success_rate:.2f}%")
         print(f"  Average Reward: {action_noise_avg_reward:.2f}")
-        print(f"Composite Score: {composite_score:.2f}%")
     print(f"Algorithm: BC (Behavioral Cloning)")
     print(f"Environment: {env_name}")
     print("--------------------------\n")
@@ -279,7 +278,6 @@ def main():
             "success_rate": success_rate,
             "average_reward": avg_reward,
             "episode_rewards": episode_rewards,
-            "composite_score": composite_score,
             "hyperparameters": {
                 "model_info": model_info,
                 "reward_type": "sparse",
@@ -289,12 +287,10 @@ def main():
         
         # Add action noise test results if performed
         if args.action_noise_test:
+            # Top-level metrics already reflect noisy evaluation
             results["action_noise_test"] = {
                 "enabled": True,
-                "noise_std": args.noise_std,
-                "success_rate": action_noise_success_rate,
-                "average_reward": action_noise_avg_reward,
-                "episode_rewards": action_noise_episode_rewards
+                "noise_std": args.noise_std
             }
         else:
             results["action_noise_test"] = {
